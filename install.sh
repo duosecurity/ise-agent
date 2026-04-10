@@ -55,6 +55,9 @@ curl -fsSL "${GITHUB_RAW_BASE}/docker-compose.yml" \
 curl -fsSL "${GITHUB_RAW_BASE}/start.sh" -o "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
 
-echo "Starting ISE agent..."
-cd "${INSTALL_DIR}"
-./start.sh
+echo ""
+echo "Installation complete. Starting ISE agent..."
+echo ""
+
+# Re-attach to terminal so start.sh can prompt for ISE credentials interactively
+exec "${INSTALL_DIR}/start.sh" < /dev/tty
