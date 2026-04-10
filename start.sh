@@ -76,7 +76,8 @@ check_prerequisites() {
 prompt_credentials() {
   echo ""
   echo "Running ISE credential setup inside container..."
-  ${RUNTIME} run --rm -it -v "$(pwd)/certs:/app/certs" --entrypoint python "${IMAGE}" -u /app/setup_credentials.py
+  TTY_FLAG=$([ -t 0 ] && echo "-t" || echo "")
+  ${RUNTIME} run --rm -i ${TTY_FLAG} -v "$(pwd)/certs:/app/certs" --entrypoint python "${IMAGE}" -u /app/setup_credentials.py
 }
 
 # -- Main --
