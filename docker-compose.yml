@@ -1,0 +1,26 @@
+services:
+  ise-agent:
+    image: public.ecr.aws/oort/ise-agent:latest
+    container_name: __CONTAINER_NAME__
+    restart: always
+    env_file: .env
+    volumes:
+      - ./certs:/app/certs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower-__AGENT_SUFFIX__
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600 __CONTAINER_NAME__
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
