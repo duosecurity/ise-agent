@@ -2,12 +2,11 @@
 set -euo pipefail
 
 GITHUB_RAW_BASE="https://raw.githubusercontent.com/duosecurity/ise-agent/v0.1"
-INSTALL_DIR="${HOME}/ise-agent"
 
 # Bundle: base64(iotEndpoint)|base64(tenantId)|base64(agentId)|base64(mqttTopicPrefix)|base64(cert)|base64(key)
 BUNDLE="${1:-}"
 if [[ -z "$BUNDLE" ]]; then
-  echo "Usage: curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
+  echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
   exit 1
 fi
 
@@ -22,11 +21,12 @@ MQTT_TOPIC_PREFIX=$(decode_field 4)
 CERT=$(decode_field 5)
 PRIVATE_KEY=$(decode_field 6)
 
-# Derive container name from the suffix portion of the agent ID (matches the ZIP package naming)
+# Derive per-agent suffix (matches container name and ZIP package naming)
 AGENT_SUFFIX=$(echo "$AGENT_ID" | awk -F'__' '{print $NF}' | cut -c1-8)
 CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
+INSTALL_DIR="$(pwd)"
 
-echo "Installing ISE agent to ${INSTALL_DIR}..."
+echo "Installing ISE agent in ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}/certs"
 
 # Write .env
