@@ -1,6 +1,6 @@
 services:
   ise-agent:
-    image: public.ecr.aws/oort/ise-agent:latest
+    image: ghcr.io/duosecurity/ise-agent:latest
     container_name: __CONTAINER_NAME__
     restart: always
     env_file: .env
