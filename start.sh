@@ -44,7 +44,7 @@ else
   COMPOSE_CMD=""
 fi
 
-IMAGE="public.ecr.aws/oort/ise-agent:latest"
+IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 
 # -- Helpers --
 
