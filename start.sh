@@ -8,6 +8,8 @@
 # Usage:
 #   ./start.sh                  # Normal start (prompts on first run)
 #   ./start.sh --reconfigure    # Re-enter ISE credentials
+#   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
+#   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
 #   ./start.sh --stop           # Stop the agent
 #
 
@@ -45,6 +47,7 @@ else
 fi
 
 IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+CONTAINER_NAME=$(grep 'container_name:' docker-compose.yml | head -1 | awk '{print $2}' 2>/dev/null || echo "ise-agent")
 
 # -- Helpers --
 
@@ -87,6 +90,8 @@ for arg in "$@"; do
   case "${arg}" in
     --reconfigure) ACTION="reconfigure" ;;
     --stop) ACTION="stop" ;;
+    --enable-pxgrid) ACTION="enable-pxgrid" ;;
+    --disable-pxgrid) ACTION="disable-pxgrid" ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
   esac
 done
@@ -99,6 +104,54 @@ fi
 if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
   ${COMPOSE_CMD} down
+  exit 0
+fi
+
+if [[ "${ACTION}" == "enable-pxgrid" ]]; then
+  echo ""
+  echo "=== Enable pxGrid Real-Time Session Monitoring ==="
+  echo ""
+  echo "This upgrades session monitoring from polling to real-time via ISE pxGrid 2.0."
+  echo "Your ISE admin will need to approve the pxGrid client once."
+  echo ""
+  read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
+  PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
+  read -rsp "  pxGrid Password: " PXGRID_PASS
+  echo ""
+  if [[ -z "${PXGRID_PASS}" ]]; then
+    echo "Error: pxGrid password is required." >&2
+    exit 1
+  fi
+
+  # Remove any existing pxGrid lines, then append
+  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
+  rm -f .env.bak
+  cat >> .env <<EOF
+
+# pxGrid real-time session monitoring
+SESSION_MODE=pxgrid
+PXGRID_NODE_NAME=${PXGRID_NODE}
+PXGRID_PASSWORD=${PXGRID_PASS}
+EOF
+
+  echo ""
+  echo "pxGrid enabled. Restarting agent..."
+  ${COMPOSE_CMD} down 2>/dev/null || true
+  ${COMPOSE_CMD} up -d
+  echo ""
+  echo "Agent restarted with pxGrid. Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+  echo "If ISE admin hasn't approved the client yet, the agent will fall back to polling"
+  echo "and retry pxGrid on next restart."
+  exit 0
+fi
+
+if [[ "${ACTION}" == "disable-pxgrid" ]]; then
+  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
+  rm -f .env.bak
+  echo "pxGrid disabled. Restarting agent with MnT polling..."
+  ${COMPOSE_CMD} down 2>/dev/null || true
+  ${COMPOSE_CMD} up -d
+  echo "Done. View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
   exit 0
 fi
 
@@ -115,4 +168,4 @@ echo "Starting ISE agent..."
 ${COMPOSE_CMD} up -d
 
 echo ""
-echo "ISE agent is running. View logs with: ${COMPOSE_CMD} logs -f"
+echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
