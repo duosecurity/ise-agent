@@ -112,18 +112,12 @@ if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   echo "=== Enable pxGrid Real-Time Session Monitoring ==="
   echo ""
   echo "This upgrades session monitoring from polling to real-time via ISE pxGrid 2.0."
-  echo "Your ISE admin will need to approve the pxGrid client once."
+  echo "The agent will register itself with ISE and wait for your admin to approve it."
   echo ""
   read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
   PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
-  read -rsp "  pxGrid Password: " PXGRID_PASS
-  echo ""
-  if [[ -z "${PXGRID_PASS}" ]]; then
-    echo "Error: pxGrid password is required." >&2
-    exit 1
-  fi
 
-  # Remove any existing pxGrid lines, then append
+  # Remove any existing pxGrid lines, then append (leave PXGRID_PASSWORD blank — agent registers on first run)
   sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
   rm -f .env.bak
   cat >> .env <<EOF
@@ -131,7 +125,7 @@ if [[ "${ACTION}" == "enable-pxgrid" ]]; then
 # pxGrid real-time session monitoring
 SESSION_MODE=pxgrid
 PXGRID_NODE_NAME=${PXGRID_NODE}
-PXGRID_PASSWORD=${PXGRID_PASS}
+PXGRID_PASSWORD=
 EOF
 
   echo ""
@@ -139,9 +133,13 @@ EOF
   ${COMPOSE_CMD} down 2>/dev/null || true
   ${COMPOSE_CMD} up -d
   echo ""
-  echo "Agent restarted with pxGrid. Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
-  echo "If ISE admin hasn't approved the client yet, the agent will fall back to polling"
-  echo "and retry pxGrid on next restart."
+  echo "Agent restarted. It will register itself with ISE and wait for admin approval."
+  echo "Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
+  echo "     Administration > pxGrid Services > Client Management > Clients"
+  echo "  2. Once approved, the agent will subscribe automatically"
   exit 0
 fi
 
