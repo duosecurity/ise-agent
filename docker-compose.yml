@@ -6,7 +6,6 @@ services:
     env_file: .env
     volumes:
       - ./certs:/app/certs
-      - ./.env:/app/.env
     logging:
       driver: json-file
       options:

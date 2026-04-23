@@ -83,6 +83,52 @@ prompt_credentials() {
   ${RUNTIME} run --rm -i ${TTY_FLAG} -v "$(pwd)/certs:/app/certs" --entrypoint python "${IMAGE}" -u /app/setup_credentials.py
 }
 
+enable_pxgrid_in_env() {
+  local node="$1"
+  # Password is encrypted at rest in ./certs/.pxgrid.enc — only node name lives in .env
+  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
+  rm -f .env.bak
+  cat >> .env <<EOF
+
+# pxGrid real-time session monitoring
+SESSION_MODE=pxgrid
+PXGRID_NODE_NAME=${node}
+EOF
+}
+
+disable_pxgrid_in_env() {
+  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
+  rm -f .env.bak
+  # Remove the encrypted password too so a future re-enable re-registers cleanly
+  rm -f ./certs/.pxgrid.enc
+}
+
+prompt_enable_pxgrid() {
+  echo ""
+  echo "=== Session monitoring mode ==="
+  echo ""
+  echo "The agent can monitor ISE sessions two ways:"
+  echo "  - pxGrid (recommended): real-time session events via WebSocket"
+  echo "  - MnT polling: periodic REST polling (slower, higher ISE load)"
+  echo ""
+  read -rp "Enable pxGrid real-time session monitoring? [Y/n]: " ENABLE_PX
+  ENABLE_PX="${ENABLE_PX:-Y}"
+  if [[ "${ENABLE_PX}" =~ ^[Yy]$ ]]; then
+    read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
+    PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
+    enable_pxgrid_in_env "${PXGRID_NODE}"
+    echo ""
+    echo "pxGrid enabled. On first start the agent will register itself with ISE."
+    echo "Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
+    echo "Administration > pxGrid Services > Client Management > Clients."
+  else
+    disable_pxgrid_in_env
+    echo ""
+    echo "pxGrid disabled. The agent will poll ISE MnT for sessions."
+    echo "You can switch later with: ./start.sh --enable-pxgrid"
+  fi
+}
+
 # -- Main --
 
 ACTION=""
@@ -116,18 +162,7 @@ if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   echo ""
   read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
   PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
-
-  # Remove any existing pxGrid lines, then append (leave PXGRID_PASSWORD blank — agent registers on first run)
-  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
-  rm -f .env.bak
-  cat >> .env <<EOF
-
-# pxGrid real-time session monitoring
-SESSION_MODE=pxgrid
-PXGRID_NODE_NAME=${PXGRID_NODE}
-PXGRID_PASSWORD=
-EOF
-
+  enable_pxgrid_in_env "${PXGRID_NODE}"
   echo ""
   echo "pxGrid enabled. Restarting agent..."
   ${COMPOSE_CMD} down 2>/dev/null || true
@@ -144,8 +179,7 @@ EOF
 fi
 
 if [[ "${ACTION}" == "disable-pxgrid" ]]; then
-  sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
-  rm -f .env.bak
+  disable_pxgrid_in_env
   echo "pxGrid disabled. Restarting agent with MnT polling..."
   ${COMPOSE_CMD} down 2>/dev/null || true
   ${COMPOSE_CMD} up -d
@@ -157,8 +191,15 @@ check_prerequisites
 
 echo "Using: ${COMPOSE_CMD}"
 
+FIRST_RUN=0
 if [[ "${ACTION}" == "reconfigure" ]] || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
+  [[ ! -f "${CREDENTIALS_FILE}" ]] && FIRST_RUN=1
   prompt_credentials
+fi
+
+# On first run, ask whether to enable pxGrid. Skip if .env already has a SESSION_MODE set.
+if [[ "${FIRST_RUN}" == "1" ]] && ! grep -q '^SESSION_MODE=' .env 2>/dev/null; then
+  prompt_enable_pxgrid
 fi
 
 echo ""
