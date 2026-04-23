@@ -2,12 +2,15 @@
 #
 # ISE Agent start script.
 #
-# On first run, prompts for ISE credentials and encrypts them locally.
-# Then starts the agent via docker/podman compose.
+# Thin wrapper: detects docker/podman, then delegates interactive setup to
+# scripts that run inside the agent container. The container handles all
+# credential encryption, .env manipulation, and ISE connectivity checks.
 #
 # Usage:
-#   ./start.sh                  # Normal start (prompts on first run)
+#   ./start.sh                  # Normal start (runs first-run setup if needed)
 #   ./start.sh --reconfigure    # Re-enter ISE credentials
+#   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
+#   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
 #   ./start.sh --stop           # Stop the agent
 #
 
@@ -19,6 +22,9 @@ cd "${SCRIPT_DIR}"
 CREDENTIALS_FILE="./certs/.credentials.enc"
 KEY_FILE="./certs/private.pem.key"
 CERT_FILE="./certs/certificate.pem.crt"
+
+IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+CONTAINER_NAME=$(grep 'container_name:' docker-compose.yml | head -1 | awk '{print $2}' 2>/dev/null || echo "ise-agent")
 
 # -- Detect container runtime (docker or podman) --
 
@@ -44,40 +50,37 @@ else
   COMPOSE_CMD=""
 fi
 
-IMAGE="ghcr.io/duosecurity/ise-agent:latest"
-
-# -- Helpers --
+# -- Container helpers --
 
 check_prerequisites() {
   if [[ -z "${RUNTIME}" ]]; then
-    echo "Error: No container runtime found." >&2
-    echo "Install one of: docker or podman." >&2
+    echo "Error: No container runtime found. Install docker or podman." >&2
     exit 1
   fi
-
-  if [[ ! -f "${KEY_FILE}" ]]; then
-    echo "Error: IoT private key not found at ${KEY_FILE}" >&2
-    echo "Make sure you've extracted the full agent package." >&2
-    exit 1
-  fi
-
-  if [[ ! -f "${CERT_FILE}" ]]; then
-    echo "Error: IoT certificate not found at ${CERT_FILE}" >&2
-    exit 1
-  fi
-
-  if [[ ! -f ".env" ]]; then
-    echo "Error: .env file not found." >&2
-    echo "Make sure you've extracted the full agent package." >&2
-    exit 1
-  fi
+  for f in "${KEY_FILE}" "${CERT_FILE}" ".env"; do
+    if [[ ! -f "${f}" ]]; then
+      echo "Error: ${f} not found. Make sure you've extracted the full agent package." >&2
+      exit 1
+    fi
+  done
 }
 
-prompt_credentials() {
-  echo ""
-  echo "Running ISE credential setup inside container..."
-  TTY_FLAG=$([ -t 0 ] && echo "-t" || echo "")
-  ${RUNTIME} run --rm -i ${TTY_FLAG} -v "$(pwd)/certs:/app/certs" --entrypoint python "${IMAGE}" -u /app/setup_credentials.py
+run_in_container() {
+  # Run a one-off container with certs mounted so setup scripts can read/write
+  # the encrypted credential stores without the host knowing their layout.
+  local script="$1"
+  shift
+  local tty_flag
+  tty_flag=$([ -t 0 ] && echo "-t" || echo "")
+  ${RUNTIME} run --rm -i ${tty_flag} \
+    -v "$(pwd)/certs:/app/certs" \
+    --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
+}
+
+compose_restart() {
+  ${COMPOSE_CMD} down 2>/dev/null || true
+  ${COMPOSE_CMD} up -d
+  echo "View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
 }
 
 # -- Main --
@@ -87,6 +90,8 @@ for arg in "$@"; do
   case "${arg}" in
     --reconfigure) ACTION="reconfigure" ;;
     --stop) ACTION="stop" ;;
+    --enable-pxgrid) ACTION="enable-pxgrid" ;;
+    --disable-pxgrid) ACTION="disable-pxgrid" ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
   esac
 done
@@ -104,15 +109,33 @@ fi
 
 check_prerequisites
 
-echo "Using: ${COMPOSE_CMD}"
+if [[ "${ACTION}" == "enable-pxgrid" ]]; then
+  run_in_container setup_pxgrid.py enable
+  compose_restart
+  exit 0
+fi
 
+if [[ "${ACTION}" == "disable-pxgrid" ]]; then
+  run_in_container setup_pxgrid.py disable
+  compose_restart
+  exit 0
+fi
+
+FIRST_RUN=0
 if [[ "${ACTION}" == "reconfigure" ]] || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
-  prompt_credentials
+  [[ ! -f "${CREDENTIALS_FILE}" ]] && FIRST_RUN=1
+  echo ""
+  echo "Running ISE credential setup inside container..."
+  run_in_container setup_credentials.py
+fi
+
+# On first run only (no pxGrid state yet), ask whether to enable pxGrid.
+if [[ "${FIRST_RUN}" == "1" ]] && [[ ! -f "./certs/.pxgrid.enc" ]]; then
+  run_in_container setup_pxgrid.py first-run
 fi
 
 echo ""
 echo "Starting ISE agent..."
 ${COMPOSE_CMD} up -d
-
 echo ""
-echo "ISE agent is running. View logs with: ${COMPOSE_CMD} logs -f"
+echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
