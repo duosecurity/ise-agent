@@ -66,15 +66,14 @@ check_prerequisites() {
 }
 
 run_in_container() {
-  # Run a one-off container with certs + .env mounted so setup scripts
-  # can read/write both without the host needing to know the layout.
+  # Run a one-off container with certs mounted so setup scripts can read/write
+  # the encrypted credential stores without the host knowing their layout.
   local script="$1"
   shift
   local tty_flag
   tty_flag=$([ -t 0 ] && echo "-t" || echo "")
   ${RUNTIME} run --rm -i ${tty_flag} \
     -v "$(pwd)/certs:/app/certs" \
-    -v "$(pwd)/.env:/app/.env" \
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
 
@@ -130,8 +129,8 @@ if [[ "${ACTION}" == "reconfigure" ]] || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
   run_in_container setup_credentials.py
 fi
 
-# On first run only, also ask whether to enable pxGrid.
-if [[ "${FIRST_RUN}" == "1" ]] && ! grep -q '^SESSION_MODE=' .env 2>/dev/null; then
+# On first run only (no pxGrid state yet), ask whether to enable pxGrid.
+if [[ "${FIRST_RUN}" == "1" ]] && [[ ! -f "./certs/.pxgrid.enc" ]]; then
   run_in_container setup_pxgrid.py first-run
 fi
 
