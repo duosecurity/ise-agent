@@ -96,11 +96,39 @@ PXGRID_NODE_NAME=${node}
 EOF
 }
 
+save_existing_pxgrid_password() {
+  local password="$1"
+  # Write the encrypted store via a one-off container so the IoT key derivation matches.
+  printf '%s\n' "${password}" | ${RUNTIME} run --rm -i \
+    -v "$(pwd)/certs:/app/certs" \
+    --entrypoint python "${IMAGE}" -u /app/setup_pxgrid_credentials.py
+}
+
 disable_pxgrid_in_env() {
   sed -i.bak '/^SESSION_MODE=/d; /^PXGRID_NODE_NAME=/d; /^PXGRID_PASSWORD=/d' .env
   rm -f .env.bak
   # Remove the encrypted password too so a future re-enable re-registers cleanly
   rm -f ./certs/.pxgrid.enc
+}
+
+prompt_pxgrid_existing_credentials() {
+  # Returns 0 if credentials were saved, 1 if user declined.
+  local node="$1"
+  echo ""
+  read -rp "Do you already have a pxGrid client registered and approved? [y/N]: " USE_EXISTING
+  USE_EXISTING="${USE_EXISTING:-N}"
+  if [[ ! "${USE_EXISTING}" =~ ^[Yy]$ ]]; then
+    return 1
+  fi
+  local password
+  read -rsp "  pxGrid Password for '${node}': " password
+  echo ""
+  if [[ -z "${password}" ]]; then
+    echo "No password entered — agent will register a new client instead."
+    return 1
+  fi
+  save_existing_pxgrid_password "${password}"
+  return 0
 }
 
 prompt_enable_pxgrid() {
@@ -113,19 +141,24 @@ prompt_enable_pxgrid() {
   echo ""
   read -rp "Enable pxGrid real-time session monitoring? [Y/n]: " ENABLE_PX
   ENABLE_PX="${ENABLE_PX:-Y}"
-  if [[ "${ENABLE_PX}" =~ ^[Yy]$ ]]; then
-    read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
-    PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
-    enable_pxgrid_in_env "${PXGRID_NODE}"
-    echo ""
-    echo "pxGrid enabled. On first start the agent will register itself with ISE."
-    echo "Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
-    echo "Administration > pxGrid Services > Client Management > Clients."
-  else
+  if [[ ! "${ENABLE_PX}" =~ ^[Yy]$ ]]; then
     disable_pxgrid_in_env
     echo ""
     echo "pxGrid disabled. The agent will poll ISE MnT for sessions."
     echo "You can switch later with: ./start.sh --enable-pxgrid"
+    return
+  fi
+  read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
+  PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
+  enable_pxgrid_in_env "${PXGRID_NODE}"
+  if prompt_pxgrid_existing_credentials "${PXGRID_NODE}"; then
+    echo ""
+    echo "pxGrid enabled with existing credentials."
+  else
+    echo ""
+    echo "pxGrid enabled. On first start the agent will register itself with ISE."
+    echo "Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
+    echo "Administration > pxGrid Services > Client Management > Clients."
   fi
 }
 
@@ -158,23 +191,30 @@ if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   echo "=== Enable pxGrid Real-Time Session Monitoring ==="
   echo ""
   echo "This upgrades session monitoring from polling to real-time via ISE pxGrid 2.0."
-  echo "The agent will register itself with ISE and wait for your admin to approve it."
   echo ""
   read -rp "  pxGrid Node Name [cii-agent]: " PXGRID_NODE
   PXGRID_NODE="${PXGRID_NODE:-cii-agent}"
   enable_pxgrid_in_env "${PXGRID_NODE}"
+  HAS_EXISTING=0
+  if prompt_pxgrid_existing_credentials "${PXGRID_NODE}"; then
+    HAS_EXISTING=1
+  fi
   echo ""
   echo "pxGrid enabled. Restarting agent..."
   ${COMPOSE_CMD} down 2>/dev/null || true
   ${COMPOSE_CMD} up -d
   echo ""
-  echo "Agent restarted. It will register itself with ISE and wait for admin approval."
-  echo "Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
-  echo ""
-  echo "Next steps:"
-  echo "  1. Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
-  echo "     Administration > pxGrid Services > Client Management > Clients"
-  echo "  2. Once approved, the agent will subscribe automatically"
+  if [[ "${HAS_EXISTING}" == "1" ]]; then
+    echo "Agent restarted with existing credentials. Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+  else
+    echo "Agent restarted. It will register itself with ISE and wait for admin approval."
+    echo "Check logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Ask your ISE admin to approve the '${PXGRID_NODE}' client in"
+    echo "     Administration > pxGrid Services > Client Management > Clients"
+    echo "  2. Once approved, the agent will subscribe automatically"
+  fi
   exit 0
 fi
 
