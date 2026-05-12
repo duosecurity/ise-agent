@@ -49,7 +49,7 @@ chmod 600 "${INSTALL_DIR}/certs/"*
 
 # Download docker-compose.yml and start.sh from GitHub
 curl -fsSL "${GITHUB_RAW_BASE}/docker-compose.yml" \
-  | sed "s/__CONTAINER_NAME__/${CONTAINER_NAME}/g; s/__AGENT_SUFFIX__/${AGENT_SUFFIX}/g" \
+  | sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g" \
   > "${INSTALL_DIR}/docker-compose.yml"
 
 curl -fsSL "${GITHUB_RAW_BASE}/start.sh" -o "${INSTALL_DIR}/start.sh"
