@@ -11,6 +11,7 @@
 #   ./start.sh --reconfigure    # Re-enter ISE credentials
 #   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
 #   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
+#   ./start.sh --update         # Pull the latest image and restart the agent
 #   ./start.sh --stop           # Stop the agent
 #
 
@@ -90,6 +91,7 @@ for arg in "$@"; do
   case "${arg}" in
     --reconfigure) ACTION="reconfigure" ;;
     --stop) ACTION="stop" ;;
+    --update) ACTION="update" ;;
     --enable-pxgrid) ACTION="enable-pxgrid" ;;
     --disable-pxgrid) ACTION="disable-pxgrid" ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
@@ -104,6 +106,13 @@ fi
 if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
   ${COMPOSE_CMD} down
+  exit 0
+fi
+
+if [[ "${ACTION}" == "update" ]]; then
+  echo "Pulling latest ISE agent image..."
+  ${COMPOSE_CMD} pull ise-agent
+  compose_restart
   exit 0
 fi
 
