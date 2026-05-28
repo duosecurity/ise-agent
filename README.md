@@ -5,7 +5,8 @@ On-premises agent for [Cisco Identity Intelligence](https://www.cisco.com/c/en/u
 ## Requirements
 
 - Docker (with Compose) or Podman
-- Network access to your ISE ERS/MNT APIs
+- Network access to your ISE API Gateway or ERS/MnT APIs
+- Network access to ISE pxGrid on TCP `8910` when pxGrid session monitoring is enabled
 
 ## Installation
 
@@ -28,8 +29,21 @@ Alternatively, download the agent package ZIP from the UI and run `./start.sh` m
 ```sh
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
+./start.sh --enable-pxgrid  # Enable or reconfigure pxGrid session monitoring
+./start.sh --disable-pxgrid # Disable pxGrid and use MnT polling
 ./start.sh --stop         # Stop the agent
 ```
+
+### Multi-node ISE deployments
+
+During credential setup, use the ISE node with API Gateway enabled. The setup
+flow attempts to detect API Gateway nodes from ISE and lets you confirm the
+selected API host.
+
+During pxGrid setup, the agent probes known deployment nodes on TCP `8910`.
+If pxGrid is enabled on a different node from the API Gateway node, enter the
+pxGrid node IP or hostname when prompted. Multiple pxGrid hosts can be entered
+as a comma-separated list for failover.
 
 ## Files
 
