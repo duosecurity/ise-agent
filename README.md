@@ -21,6 +21,10 @@ This will:
 3. Download `docker-compose.yml` and `start.sh`
 4. Start the agent
 
+The generated `.env` only includes connection settings. The agent image applies
+its built-in polling and telemetry cadence defaults unless you add optional
+interval overrides to `.env`.
+
 Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
 
 ## Usage
