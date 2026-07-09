@@ -12,6 +12,7 @@
 #   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
 #   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
 #   ./start.sh --update         # Pull the latest image and restart the agent
+#   ./start.sh --no-pull        # Skip image pull for offline environments
 #   ./start.sh --stop           # Stop the agent
 #
 
@@ -26,6 +27,8 @@ CERT_FILE="./certs/certificate.pem.crt"
 
 IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 CONTAINER_NAME=$(grep 'container_name:' docker-compose.yml | head -1 | awk '{print $2}' 2>/dev/null || echo "ise-agent")
+PULL_IMAGE=1
+IMAGE_PULLED=0
 
 # -- Detect container runtime (docker or podman) --
 
@@ -66,14 +69,26 @@ check_prerequisites() {
   done
 }
 
+pull_image_once() {
+  if [[ "${PULL_IMAGE}" != "1" ]] || [[ "${IMAGE_PULLED}" == "1" ]]; then
+    return
+  fi
+
+  echo "Pulling latest ISE agent image..."
+  ${RUNTIME} pull "${IMAGE}"
+  IMAGE_PULLED=1
+}
+
 run_in_container() {
   # Run a one-off container with certs mounted so setup scripts can read/write
   # the encrypted credential stores without the host knowing their layout.
+  pull_image_once
   local script="$1"
   shift
   local tty_flag
   tty_flag=$([ -t 0 ] && echo "-t" || echo "")
   ${RUNTIME} run --rm -i ${tty_flag} \
+    --env-file "$(pwd)/.env" \
     -v "$(pwd)/certs:/app/certs" \
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
@@ -94,6 +109,7 @@ for arg in "$@"; do
     --update) ACTION="update" ;;
     --enable-pxgrid) ACTION="enable-pxgrid" ;;
     --disable-pxgrid) ACTION="disable-pxgrid" ;;
+    --no-pull) PULL_IMAGE=0 ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
   esac
 done
@@ -110,8 +126,12 @@ if [[ "${ACTION}" == "stop" ]]; then
 fi
 
 if [[ "${ACTION}" == "update" ]]; then
-  echo "Pulling latest ISE agent image..."
-  ${COMPOSE_CMD} pull ise-agent
+  if [[ "${PULL_IMAGE}" == "1" ]]; then
+    echo "Pulling latest ISE agent image..."
+    ${COMPOSE_CMD} pull ise-agent
+  else
+    echo "Skipping image pull (--no-pull). Restarting with local image."
+  fi
   compose_restart
   exit 0
 fi
@@ -145,6 +165,7 @@ fi
 
 echo ""
 echo "Starting ISE agent..."
+pull_image_once
 ${COMPOSE_CMD} up -d
 echo ""
 echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
