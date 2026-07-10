@@ -12,7 +12,7 @@
 #   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
 #   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
 #   ./start.sh --update         # Pull the latest image and restart the agent
-#   ./start.sh --no-pull        # Skip image pull for offline environments
+#   ./start.sh --no-pull        # Skip image pull for offline/local-image environments
 #   ./start.sh --stop           # Stop the agent
 #
 
@@ -85,9 +85,9 @@ run_in_container() {
   pull_image_once
   local script="$1"
   shift
-  local tty_flag
-  tty_flag=$([ -t 0 ] && echo "-t" || echo "")
-  ${RUNTIME} run --rm -i ${tty_flag} \
+  local tty_args=()
+  [[ -t 0 ]] && tty_args=(-t)
+  ${RUNTIME} run --rm --pull=never -i "${tty_args[@]}" \
     --env-file "$(pwd)/.env" \
     -v "$(pwd)/certs:/app/certs" \
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
@@ -126,12 +126,10 @@ if [[ "${ACTION}" == "stop" ]]; then
 fi
 
 if [[ "${ACTION}" == "update" ]]; then
-  if [[ "${PULL_IMAGE}" == "1" ]]; then
-    echo "Pulling latest ISE agent image..."
-    ${COMPOSE_CMD} pull ise-agent
-  else
+  if [[ "${PULL_IMAGE}" != "1" ]]; then
     echo "Skipping image pull (--no-pull). Restarting with local image."
   fi
+  pull_image_once
   compose_restart
   exit 0
 fi
