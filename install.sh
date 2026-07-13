@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_ASSET_BASE="https://github.com/duosecurity/ise-agent/releases/latest/download"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/duosecurity/ise-agent/main"
 
 # Bundle: base64(iotEndpoint)|base64(tenantId)|base64(agentId)|base64(mqttTopicPrefix)|base64(cert)|base64(key)
 BUNDLE="${1:-}"
@@ -42,12 +42,12 @@ printf '%s' "$CERT" > "${INSTALL_DIR}/certs/certificate.pem.crt"
 printf '%s' "$PRIVATE_KEY" > "${INSTALL_DIR}/certs/private.pem.key"
 chmod 600 "${INSTALL_DIR}/certs/"*
 
-# Download docker-compose.yml and start.sh from the latest published release
-curl -fsSL "${RELEASE_ASSET_BASE}/docker-compose.yml" \
+# Download docker-compose.yml and start.sh from the latest merged revision
+curl -fsSL "${GITHUB_RAW_BASE}/docker-compose.yml" \
   | sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g" \
   > "${INSTALL_DIR}/docker-compose.yml"
 
-curl -fsSL "${RELEASE_ASSET_BASE}/start.sh" -o "${INSTALL_DIR}/start.sh"
+curl -fsSL "${GITHUB_RAW_BASE}/start.sh" -o "${INSTALL_DIR}/start.sh"
 chmod +x "${INSTALL_DIR}/start.sh"
 
 echo ""
