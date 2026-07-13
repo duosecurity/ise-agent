@@ -12,7 +12,7 @@ On-premises agent for [Cisco Identity Intelligence](https://www.cisco.com/c/en/u
 The easiest way to install is via the one-line command provided in the Cisco Identity Intelligence UI after creating an ISE integration. The command looks like:
 
 ```sh
-curl -fsSL "https://raw.githubusercontent.com/duosecurity/ise-agent/v0.1/install.sh" | bash -s "<bundle>"
+curl -fsSL "https://github.com/duosecurity/ise-agent/releases/latest/download/install.sh" | bash -s "<bundle>"
 ```
 
 This will:
@@ -26,6 +26,13 @@ its built-in polling and telemetry cadence defaults unless you add optional
 interval overrides to `.env`.
 
 Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
+
+## Releasing
+
+Push a version tag such as `v0.2` to publish a GitHub Release containing
+`install.sh`, `start.sh`, and `docker-compose.yml`. Consumers use GitHub's
+`releases/latest/download` URLs, so they automatically receive the latest
+published release without updating a versioned URL.
 
 ## Usage
 
