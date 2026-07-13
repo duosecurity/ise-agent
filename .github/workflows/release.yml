@@ -2,8 +2,8 @@ name: Publish release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -22,10 +22,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          tag="release-${GITHUB_SHA::12}"
+          gh release create "${tag}" \
             install.sh \
             start.sh \
             docker-compose.yml \
-            --verify-tag \
+            --target "${GITHUB_SHA}" \
             --generate-notes \
-            --latest
+            --latest=false
+
+          main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
+          if [[ "${main_sha}" == "${GITHUB_SHA}" ]]; then
+            gh release edit "${tag}" --latest
+          fi

@@ -29,10 +29,11 @@ Alternatively, download the agent package ZIP from the UI and run `./start.sh` m
 
 ## Releasing
 
-Push a version tag such as `v0.2` to publish a GitHub Release containing
-`install.sh`, `start.sh`, and `docker-compose.yml`. Consumers use GitHub's
-`releases/latest/download` URLs, so they automatically receive the latest
-published release without updating a versioned URL.
+Every merge to `main` publishes a GitHub Release containing `install.sh`,
+`start.sh`, and `docker-compose.yml`. The workflow creates a commit-specific
+`release-<commit>` tag automatically. Consumers use GitHub's
+`releases/latest/download` URLs, so they receive the latest published release
+without updating a versioned URL or manually creating a tag.
 
 ## Usage
 
