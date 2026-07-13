@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/duosecurity/ise-agent/v0.1"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/duosecurity/ise-agent/v0.2"
 
 # Bundle: base64(iotEndpoint)|base64(tenantId)|base64(agentId)|base64(mqttTopicPrefix)|base64(cert)|base64(key)
 BUNDLE="${1:-}"
