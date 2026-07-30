@@ -1,0 +1,36 @@
+start.sh
+  s_9df429c3b47f51::t_3f2792854a54e2 145-147,157,159-161,209-210,214,240-243,271,314
+  s_9df429c3b47f51::t_062f74b7585e78 33,77,80,121,123,131,141,154,156,196,199-201
+  s_9df429c3b47f51::t_4fef2840ac1dd7 34,81-117,134,150,153,216,218-221,231,237-239
+  s_9df429c3b47f51::t_ec8858bacf295d 217,222-230,232-236
+  s_9df429c3b47f51::t_aa961f9e47bc29 32,62-66,68,70-75,194,198,265
+  s_9df429c3b47f51::t_cc386baad2d11e 76,78,118-119,124-130,137-139,195,202,266
+  s_9df429c3b47f51::t_5b625e51a9171f 79,120,122,132-133,135-136
+  s_9df429c3b47f51::t_705c056d709466 67,69
+  s_9df429c3b47f51::t_0ab96ac5f460c6 35-36
+  s_9df429c3b47f51::t_c97635b348989c 140
+  s_9df429c3b47f51::t_8dcbc3de86c992 142-144
+  s_9df429c3b47f51::t_997248483bfd45 148-149
+  s_9df429c3b47f51::t_6da34ad609ce2f 151-152
+  s_9df429c3b47f51::t_79b32e5572fa48 155
+  s_9df429c3b47f51::t_51feed0bc9d7ac 158
+  s_9df429c3b47f51::t_0113ddcb27137a 215
+  s_9df429c3b47f51::t_c67773e1a8251d 244
+  s_9df429c3b47f51::t_7d0793dc582926 267-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "6b3daa8d90fd35f38813c1c905885ebca64d2138",
+  "prompts": {},
+  "sessions": {
+    "s_9df429c3b47f51": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "7be67b0d-b310-414d-9f48-65e8464485f8",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
