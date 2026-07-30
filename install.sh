@@ -6,7 +6,7 @@ RELEASE_ASSET_BASE="https://github.com/duosecurity/ise-agent/releases/latest/dow
 # Bundle: base64(iotEndpoint)|base64(tenantId)|base64(agentId)|base64(mqttTopicPrefix)|base64(cert)|base64(key)
 BUNDLE="${1:-}"
 if [[ -z "$BUNDLE" ]]; then
-  echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
+  echo "Usage: curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
   exit 1
 fi
 
@@ -24,7 +24,7 @@ PRIVATE_KEY=$(decode_field 6)
 # Derive per-agent suffix (matches container name and ZIP package naming)
 AGENT_SUFFIX=$(echo "$AGENT_ID" | awk -F'__' '{print $NF}' | cut -c1-8)
 CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
-INSTALL_DIR="$(pwd)"
+INSTALL_DIR="${HOME}/ise-agent-${AGENT_SUFFIX}"
 
 echo "Installing ISE agent in ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}/certs"

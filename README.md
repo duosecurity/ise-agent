@@ -17,7 +17,7 @@ curl -fsSL "https://github.com/duosecurity/ise-agent/releases/latest/download/in
 
 This will:
 1. Decode your IoT credentials from the bundle
-2. Write `.env` and `certs/` to `~/ise-agent/`
+2. Write `.env` and `certs/` to an agent-specific `~/ise-agent-<id>/` directory
 3. Download `docker-compose.yml` and `start.sh`
 4. Start the agent
 
