@@ -29,6 +29,11 @@ IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 CONTAINER_NAME=$(grep 'container_name:' docker-compose.yml | head -1 | awk '{print $2}' 2>/dev/null || echo "ise-agent")
 PULL_IMAGE=1
 IMAGE_PULLED=0
+ISE_AGENT_NETWORK_MODE="bridge"
+ISE_AGENT_DNS_SERVERS=()
+ISE_AGENT_DNS_MODE="${ISE_AGENT_DNS_MODE:-auto}"
+COMPOSE_GENERATED_OVERRIDE_FILE="./docker-compose.generated.yml"
+COMPOSE_LEGACY_DNS_OVERRIDE_FILE="./docker-compose.dns.yml"
 
 # -- Detect container runtime (docker or podman) --
 
@@ -53,6 +58,106 @@ elif [[ "${RUNTIME}" == "podman" ]] && command -v podman-compose &>/dev/null; th
 else
   COMPOSE_CMD=""
 fi
+
+host_has_ipv6_default_route() {
+  ip -6 route show default 2>/dev/null | grep -q .
+}
+
+detect_network_mode() {
+  if host_has_ipv6_default_route; then
+    ISE_AGENT_NETWORK_MODE="host"
+    echo "IPv6-capable host detected; using host networking for ISE agent."
+  else
+    ISE_AGENT_NETWORK_MODE="bridge"
+  fi
+  export ISE_AGENT_NETWORK_MODE
+}
+
+detect_dns_servers() {
+  local dns_server
+  local resolv_conf
+  local resolv_conf_dns_servers
+  ISE_AGENT_DNS_SERVERS=()
+
+  case "${ISE_AGENT_DNS_MODE}" in
+    never|off|false|0)
+      return
+      ;;
+    auto)
+      if [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]]; then
+        return
+      fi
+
+      resolv_conf="/etc/resolv.conf"
+      if [[ -r "${resolv_conf}" ]]; then
+        resolv_conf_dns_servers=()
+        while read -r dns_server; do
+          [[ -n "${dns_server}" ]] && resolv_conf_dns_servers+=("${dns_server}")
+        done < <(
+          awk '
+            /^nameserver[[:space:]]+/ {
+              if ($2 !~ /^(127\.|::1$)/) {
+                print $2
+              }
+            }
+          ' "${resolv_conf}"
+        )
+        if [[ "${#resolv_conf_dns_servers[@]}" -gt 0 ]]; then
+          return
+        fi
+      fi
+      ;;
+    always|on|true|1)
+      ;;
+    *)
+      echo "Error: ISE_AGENT_DNS_MODE must be auto, always, or never." >&2
+      exit 1
+      ;;
+  esac
+
+  for resolv_conf in /etc/resolv.conf /run/systemd/resolve/resolv.conf; do
+    [[ -r "${resolv_conf}" ]] || continue
+    resolv_conf_dns_servers=()
+    while read -r dns_server; do
+      [[ -n "${dns_server}" ]] && resolv_conf_dns_servers+=("${dns_server}")
+    done < <(
+      awk '
+        /^nameserver[[:space:]]+/ {
+          if ($2 !~ /^(127\.|::1$)/) {
+            print $2
+          }
+        }
+      ' "${resolv_conf}"
+    )
+    if [[ "${#resolv_conf_dns_servers[@]}" -gt 0 ]]; then
+      ISE_AGENT_DNS_SERVERS=("${resolv_conf_dns_servers[@]}")
+      echo "Using explicit DNS servers for ISE agent containers from ${resolv_conf}."
+      return
+    fi
+  done
+}
+
+write_compose_generated_override() {
+  local dns_server
+  rm -f "${COMPOSE_LEGACY_DNS_OVERRIDE_FILE}"
+  if [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] || [[ "${#ISE_AGENT_DNS_SERVERS[@]}" -gt 0 ]]; then
+    cat > "${COMPOSE_GENERATED_OVERRIDE_FILE}" <<EOF
+services:
+  ise-agent:
+EOF
+    if [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]]; then
+      printf '    network_mode: host\n' >> "${COMPOSE_GENERATED_OVERRIDE_FILE}"
+    fi
+    if [[ "${#ISE_AGENT_DNS_SERVERS[@]}" -gt 0 ]]; then
+      printf '    dns:\n' >> "${COMPOSE_GENERATED_OVERRIDE_FILE}"
+    fi
+    for dns_server in "${ISE_AGENT_DNS_SERVERS[@]}"; do
+      printf '      - %s\n' "${dns_server}" >> "${COMPOSE_GENERATED_OVERRIDE_FILE}"
+    done
+  else
+    rm -f "${COMPOSE_GENERATED_OVERRIDE_FILE}"
+  fi
+}
 
 # -- Container helpers --
 
@@ -86,17 +191,55 @@ run_in_container() {
   local script="$1"
   shift
   local tty_args=()
+  local network_args=()
+  local dns_args=()
+  local dns_server
   [[ -t 0 ]] && tty_args=(-t)
-  ${RUNTIME} run --rm --pull=never -i "${tty_args[@]}" \
+  [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
+  for dns_server in "${ISE_AGENT_DNS_SERVERS[@]}"; do
+    dns_args+=(--dns "${dns_server}")
+  done
+  ${RUNTIME} run --rm --pull=never "${network_args[@]}" "${dns_args[@]}" -i "${tty_args[@]}" \
     --env-file "$(pwd)/.env" \
     -v "$(pwd)/certs:/app/certs" \
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
 
 compose_restart() {
-  ${COMPOSE_CMD} down 2>/dev/null || true
-  ${COMPOSE_CMD} up -d
+  compose_cmd down 2>/dev/null || true
+  compose_cmd up -d
   echo "View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+}
+
+compose_cmd() {
+  if [[ -f "${COMPOSE_GENERATED_OVERRIDE_FILE}" ]]; then
+    local compose_file
+    local compose_candidate
+    local compose_path_separator="${COMPOSE_PATH_SEPARATOR:-:}"
+    if [[ -n "${COMPOSE_FILE:-}" ]]; then
+      compose_file="${COMPOSE_FILE}${compose_path_separator}${COMPOSE_GENERATED_OVERRIDE_FILE}"
+    else
+      compose_file=""
+      for compose_candidate in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+        if [[ -f "${compose_candidate}" ]]; then
+          compose_file="${compose_candidate}"
+          break
+        fi
+      done
+      if [[ -z "${compose_file}" ]]; then
+        compose_file="docker-compose.yml"
+      fi
+      for compose_candidate in compose.override.yaml compose.override.yml docker-compose.override.yaml docker-compose.override.yml; do
+        if [[ -f "${compose_candidate}" ]]; then
+          compose_file="${compose_file}${compose_path_separator}${compose_candidate}"
+        fi
+      done
+      compose_file="${compose_file}${compose_path_separator}${COMPOSE_GENERATED_OVERRIDE_FILE}"
+    fi
+    COMPOSE_FILE="${compose_file}" ${COMPOSE_CMD} "$@"
+  else
+    ${COMPOSE_CMD} "$@"
+  fi
 }
 
 # -- Main --
@@ -119,9 +262,13 @@ if [[ -z "${COMPOSE_CMD}" ]]; then
   exit 1
 fi
 
+detect_network_mode
+detect_dns_servers
+write_compose_generated_override
+
 if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
-  ${COMPOSE_CMD} down
+  compose_cmd down
   exit 0
 fi
 
@@ -164,6 +311,6 @@ fi
 echo ""
 echo "Starting ISE agent..."
 pull_image_once
-${COMPOSE_CMD} up -d
+compose_cmd up -d
 echo ""
 echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
