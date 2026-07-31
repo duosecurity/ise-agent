@@ -10,7 +10,6 @@
 #   ./start.sh                  # Normal start (runs first-run setup if needed)
 #   ./start.sh --reconfigure    # Re-enter ISE credentials
 #   ./start.sh --enable-pxgrid  # Enable real-time session monitoring via pxGrid
-#   ./start.sh --disable-pxgrid # Revert to MnT polling for sessions
 #   ./start.sh --update         # Pull the latest image and restart the agent
 #   ./start.sh --no-pull        # Skip image pull for offline/local-image environments
 #   ./start.sh --stop           # Stop the agent
@@ -108,7 +107,6 @@ for arg in "$@"; do
     --stop) ACTION="stop" ;;
     --update) ACTION="update" ;;
     --enable-pxgrid) ACTION="enable-pxgrid" ;;
-    --disable-pxgrid) ACTION="disable-pxgrid" ;;
     --no-pull) PULL_IMAGE=0 ;;
     *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
   esac
@@ -138,12 +136,6 @@ check_prerequisites
 
 if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   run_in_container setup_pxgrid.py enable
-  compose_restart
-  exit 0
-fi
-
-if [[ "${ACTION}" == "disable-pxgrid" ]]; then
-  run_in_container setup_pxgrid.py disable
   compose_restart
   exit 0
 fi
