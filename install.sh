@@ -41,6 +41,8 @@ trap cleanup EXIT
 
 for target in \
   "${INSTALL_DIR}/.env" \
+  "${INSTALL_DIR}/docker-compose.yml" \
+  "${INSTALL_DIR}/start.sh" \
   "${INSTALL_DIR}/certs/certificate.pem.crt" \
   "${INSTALL_DIR}/certs/private.pem.key"; do
   if [[ -e "${target}" ]]; then
