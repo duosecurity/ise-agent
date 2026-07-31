@@ -88,5 +88,8 @@ echo ""
 echo "Installation complete. Starting ISE agent..."
 echo ""
 
+cleanup
+trap - EXIT
+
 # Re-attach to terminal so start.sh can prompt for ISE credentials interactively
 exec "${INSTALL_DIR}/start.sh" --no-pull < /dev/tty
