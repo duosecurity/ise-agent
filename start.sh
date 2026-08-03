@@ -59,15 +59,19 @@ load_network_mode() {
   local network_mode="${ISE_AGENT_NETWORK_MODE:-}"
 
   if [[ -z "${network_mode}" ]] && [[ -r ".env" ]]; then
-    network_mode=$(awk -F= '$1 == "ISE_AGENT_NETWORK_MODE" { print $2; exit }' .env)
+    network_mode=$(
+      # shellcheck disable=SC1091
+      source .env
+      printf '%s' "${ISE_AGENT_NETWORK_MODE:-}"
+    )
   fi
 
-  ISE_AGENT_NETWORK_MODE="${network_mode:-bridge}"
+  ISE_AGENT_NETWORK_MODE="${network_mode:-}"
   case "${ISE_AGENT_NETWORK_MODE}" in
-    bridge|host)
+    ""|bridge|host)
       ;;
     *)
-      echo "Error: ISE_AGENT_NETWORK_MODE must be bridge or host." >&2
+      echo "Error: ISE_AGENT_NETWORK_MODE must be empty, bridge, or host." >&2
       exit 1
       ;;
   esac
