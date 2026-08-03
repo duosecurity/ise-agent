@@ -1,0 +1,22 @@
+docker-compose.yml
+  s_9df429c3b47f51::t_fad2e7add0d395 10
+start.sh
+  s_9df429c3b47f51::t_a2a0f865207d2a 62-66
+  s_9df429c3b47f51::t_fad2e7add0d395 69,71,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "6865e9ea5c97ccb623916edba127509259d74b51",
+  "prompts": {},
+  "sessions": {
+    "s_9df429c3b47f51": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "7be67b0d-b310-414d-9f48-65e8464485f8",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
