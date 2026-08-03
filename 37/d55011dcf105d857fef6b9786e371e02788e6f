@@ -1,0 +1,19 @@
+collect-logs.sh
+  s_127f65aaaae1c8::t_d592569e8d418b 1-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "37d55011dcf105d857fef6b9786e371e02788e6f",
+  "prompts": {},
+  "sessions": {
+    "s_127f65aaaae1c8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fa49588-3c4b-41aa-81a3-00ebe427b193",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
