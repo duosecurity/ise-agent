@@ -4,14 +4,25 @@ set -euo pipefail
 RELEASE_ASSET_BASE="https://github.com/duosecurity/ise-agent/releases/latest/download"
 IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 
-BOOTSTRAP_ENDPOINT="${1:-}"
-BOOTSTRAP_TOKEN="${2:-}"
+BUNDLE="${1:-}"
 set --
 
-if [[ -z "${BOOTSTRAP_ENDPOINT}" || -z "${BOOTSTRAP_TOKEN}" ]]; then
-  echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s -- <bootstrap-endpoint> <bootstrap-token>" >&2
+if [[ -z "${BUNDLE}" ]]; then
+  echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
   exit 1
 fi
+
+decode_field() {
+  echo "${BUNDLE}" | cut -d'|' -f"$1" | base64 --decode
+}
+
+IOT_ENDPOINT=$(decode_field 1)
+TENANT_ID=$(decode_field 2)
+AGENT_ID=$(decode_field 3)
+MQTT_TOPIC_PREFIX=$(decode_field 4)
+CERTIFICATE_OR_BOOTSTRAP_ENDPOINT=$(decode_field 5)
+PRIVATE_KEY_OR_BOOTSTRAP_TOKEN=$(decode_field 6)
+BUNDLE=""
 
 detect_runtime() {
   if command -v docker &>/dev/null; then
@@ -59,14 +70,30 @@ bash -n "${TEMP_DIR}/start.sh"
 echo "Pulling the ISE agent image..."
 "${RUNTIME}" pull "${IMAGE}"
 
-echo "Generating the private key locally and requesting its AWS IoT certificate..."
-printf '%s' "${BOOTSTRAP_TOKEN}" | "${RUNTIME}" run --rm --pull=never -i \
-  --user "${HOST_USER}" \
-  -v "${INSTALL_DIR}:/bootstrap" \
-  --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
-  --endpoint "${BOOTSTRAP_ENDPOINT}" \
-  --output-dir /bootstrap
-BOOTSTRAP_TOKEN=""
+if [[ "${CERTIFICATE_OR_BOOTSTRAP_ENDPOINT}" == https://* ]] \
+  && [[ "${PRIVATE_KEY_OR_BOOTSTRAP_TOKEN}" == iseb1.*.* ]]; then
+  echo "Generating the private key locally and requesting its AWS IoT certificate..."
+  printf '%s' "${PRIVATE_KEY_OR_BOOTSTRAP_TOKEN}" | "${RUNTIME}" run --rm --pull=never -i \
+    --user "${HOST_USER}" \
+    -v "${INSTALL_DIR}:/bootstrap" \
+    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
+    --endpoint "${CERTIFICATE_OR_BOOTSTRAP_ENDPOINT}" \
+    --output-dir /bootstrap
+  PRIVATE_KEY_OR_BOOTSTRAP_TOKEN=""
+elif [[ "${CERTIFICATE_OR_BOOTSTRAP_ENDPOINT}" == *"BEGIN CERTIFICATE"* ]] \
+  && [[ "${PRIVATE_KEY_OR_BOOTSTRAP_TOKEN}" == *"PRIVATE KEY"* ]]; then
+  mkdir -p "${INSTALL_DIR}/certs"
+  printf 'IOT_ENDPOINT=%s\nTENANT_ID=%s\nAGENT_ID=%s\nMQTT_TOPIC_PREFIX=%s\n' \
+    "${IOT_ENDPOINT}" "${TENANT_ID}" "${AGENT_ID}" "${MQTT_TOPIC_PREFIX}" \
+    > "${INSTALL_DIR}/.env"
+  printf '%s' "${CERTIFICATE_OR_BOOTSTRAP_ENDPOINT}" > "${INSTALL_DIR}/certs/certificate.pem.crt"
+  printf '%s' "${PRIVATE_KEY_OR_BOOTSTRAP_TOKEN}" > "${INSTALL_DIR}/certs/private.pem.key"
+  chmod 600 "${INSTALL_DIR}/.env" "${INSTALL_DIR}/certs/certificate.pem.crt" "${INSTALL_DIR}/certs/private.pem.key"
+  PRIVATE_KEY_OR_BOOTSTRAP_TOKEN=""
+else
+  echo "Error: the ISE agent credential bundle is invalid." >&2
+  exit 1
+fi
 
 AGENT_ID=$(sed -n 's/^AGENT_ID=//p' "${INSTALL_DIR}/.env")
 if [[ ! "${AGENT_ID}" =~ __ISE__[A-Za-z0-9-]+$ ]]; then

@@ -120,6 +120,39 @@ run_in_container() {
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
 
+redeem_packaged_bootstrap() {
+  local bootstrap_endpoint bootstrap_token backup_dir host_user
+  bootstrap_endpoint=$(cat "${CERT_FILE}")
+  if [[ "${bootstrap_endpoint}" != https://* ]]; then
+    return
+  fi
+  bootstrap_token=$(cat "${KEY_FILE}")
+  if [[ "${bootstrap_token}" != iseb1.*.* ]]; then
+    echo "Error: packaged ISE agent bootstrap credential is invalid." >&2
+    exit 1
+  fi
+
+  pull_image_once
+  host_user="$(id -u):$(id -g)"
+  backup_dir=$(mktemp -d "$(pwd)/.ise-agent-bootstrap.XXXXXX")
+  mv .env "${CERT_FILE}" "${KEY_FILE}" "${backup_dir}/"
+  echo "Generating the private key locally and requesting its AWS IoT certificate..."
+  if ! printf '%s' "${bootstrap_token}" | "${RUNTIME}" run --rm --pull=never -i \
+    --user "${host_user}" \
+    -v "$(pwd):/bootstrap" \
+    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
+    --endpoint "${bootstrap_endpoint}" \
+    --output-dir /bootstrap; then
+    mv "${backup_dir}/.env" .env
+    mv "${backup_dir}/certificate.pem.crt" "${CERT_FILE}"
+    mv "${backup_dir}/private.pem.key" "${KEY_FILE}"
+    rmdir "${backup_dir}"
+    exit 1
+  fi
+  bootstrap_token=""
+  rm -rf "${backup_dir}"
+}
+
 compose_restart() {
   compose_cmd down 2>/dev/null || true
   compose_cmd up -d
@@ -168,6 +201,7 @@ if [[ "${ACTION}" == "update" ]]; then
 fi
 
 check_prerequisites
+redeem_packaged_bootstrap
 
 if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   run_in_container setup_pxgrid.py enable
