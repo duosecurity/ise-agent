@@ -1,0 +1,19 @@
+docker-compose.yml
+  s_f87836d7b88ee1::t_7359562cf82057 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "732cf981c9ddfee70f187bb907fcc1cf11a6c8f4",
+  "prompts": {},
+  "sessions": {
+    "s_f87836d7b88ee1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "267d5f48-5881-4742-9d12-b3154681d0f6",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
