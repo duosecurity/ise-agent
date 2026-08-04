@@ -1,0 +1,19 @@
+start.sh
+  s_f87836d7b88ee1::t_5754b5e7ec8815 69,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "33921a9a37ae1ad7d9d0a537ecb97e5105e958dd",
+  "prompts": {},
+  "sessions": {
+    "s_f87836d7b88ee1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "267d5f48-5881-4742-9d12-b3154681d0f6",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
