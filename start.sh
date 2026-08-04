@@ -66,9 +66,9 @@ load_network_mode() {
     )
   fi
 
-  ISE_AGENT_NETWORK_MODE="${network_mode:-}"
+  ISE_AGENT_NETWORK_MODE="${network_mode:-bridge}"
   case "${ISE_AGENT_NETWORK_MODE}" in
-    ""|bridge|host)
+    bridge|host)
       ;;
     *)
       echo "Error: ISE_AGENT_NETWORK_MODE must be empty, bridge, or host." >&2
