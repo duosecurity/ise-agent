@@ -12,18 +12,18 @@ On-premises agent for [Cisco Identity Intelligence](https://www.cisco.com/c/en/u
 The easiest way to install is via the one-line command provided in the Cisco Identity Intelligence UI after creating an ISE integration. The command looks like:
 
 ```sh
-curl -fsSL "https://github.com/duosecurity/ise-agent/releases/latest/download/install.sh" | bash -s "<bundle>"
+curl -fsSL "https://github.com/duosecurity/ise-agent/releases/latest/download/install.sh" | bash
 ```
 
 This will:
-1. Decode your IoT credentials from the bundle
-2. Write `.env` and `certs/` to `~/ise-agent/`
-3. Download `docker-compose.yml` and `start.sh`
+1. Download `docker-compose.yml` and `start.sh`
+2. Prompt securely for the CII agent credential and your ISE credentials
+3. Encrypt the credentials on the host
 4. Start the agent
 
-The generated `.env` only includes connection settings. The agent image applies
-its built-in polling and telemetry cadence defaults unless you add optional
-interval overrides to `.env`.
+The generated `.env` contains no credentials. The agent image applies its
+built-in polling and telemetry cadence defaults unless you add optional interval
+overrides to `.env`.
 
 Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
 
