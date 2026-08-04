@@ -29,6 +29,7 @@ IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 CONTAINER_NAME=$(grep 'container_name:' docker-compose.yml | head -1 | awk '{print $2}' 2>/dev/null || echo "ise-agent")
 PULL_IMAGE=1
 IMAGE_PULLED=0
+ISE_AGENT_NETWORK_MODE="${ISE_AGENT_NETWORK_MODE:-}"
 
 # -- Detect container runtime (docker or podman) --
 
@@ -53,6 +54,30 @@ elif [[ "${RUNTIME}" == "podman" ]] && command -v podman-compose &>/dev/null; th
 else
   COMPOSE_CMD=""
 fi
+
+load_network_mode() {
+  local network_mode="${ISE_AGENT_NETWORK_MODE:-}"
+
+  if [[ -z "${network_mode}" ]] && [[ -r ".env" ]]; then
+    network_mode=$(
+      # shellcheck disable=SC1091
+      source .env
+      printf '%s' "${ISE_AGENT_NETWORK_MODE:-}"
+    )
+  fi
+
+  ISE_AGENT_NETWORK_MODE="${network_mode:-}"
+  case "${ISE_AGENT_NETWORK_MODE}" in
+    ""|bridge|host)
+      ;;
+    *)
+      echo "Error: ISE_AGENT_NETWORK_MODE must be empty, bridge, or host." >&2
+      exit 1
+      ;;
+  esac
+
+  export ISE_AGENT_NETWORK_MODE
+}
 
 # -- Container helpers --
 
@@ -86,17 +111,23 @@ run_in_container() {
   local script="$1"
   shift
   local tty_args=()
+  local network_args=()
   [[ -t 0 ]] && tty_args=(-t)
-  ${RUNTIME} run --rm --pull=never -i "${tty_args[@]}" \
+  [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
+  ${RUNTIME} run --rm --pull=never "${network_args[@]}" -i "${tty_args[@]}" \
     --env-file "$(pwd)/.env" \
     -v "$(pwd)/certs:/app/certs" \
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
 
 compose_restart() {
-  ${COMPOSE_CMD} down 2>/dev/null || true
-  ${COMPOSE_CMD} up -d
+  compose_cmd down 2>/dev/null || true
+  compose_cmd up -d
   echo "View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+}
+
+compose_cmd() {
+  ${COMPOSE_CMD} "$@"
 }
 
 # -- Main --
@@ -119,9 +150,11 @@ if [[ -z "${COMPOSE_CMD}" ]]; then
   exit 1
 fi
 
+load_network_mode
+
 if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
-  ${COMPOSE_CMD} down
+  compose_cmd down
   exit 0
 fi
 
@@ -164,6 +197,6 @@ fi
 echo ""
 echo "Starting ISE agent..."
 pull_image_once
-${COMPOSE_CMD} up -d
+compose_cmd up -d
 echo ""
 echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
