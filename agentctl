@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+#
+# Versioned host controller for the ISE Agent.
+#
+# This file is refreshed from the latest GitHub Release by `./start.sh --update`.
+# Keep the stable start.sh bootstrap small; host-side lifecycle behavior belongs
+# here, while credential and ISE-specific setup remains inside the agent image.
+#
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${SCRIPT_DIR}"
+
+RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
+CREDENTIALS_FILE="./certs/.credentials.enc"
+KEY_FILE="./certs/private.pem.key"
+CERT_FILE="./certs/certificate.pem.crt"
+IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+CONTAINER_NAME=$(awk '/container_name:/ {print $2; exit}' docker-compose.yml 2>/dev/null || true)
+CONTAINER_NAME="${CONTAINER_NAME:-ise-agent}"
+PULL_IMAGE=1
+IMAGE_PULLED=0
+ISE_AGENT_NETWORK_MODE="${ISE_AGENT_NETWORK_MODE:-}"
+HOST_TOOLS_CURRENT="${ISE_AGENT_HOST_TOOLS_CURRENT:-0}"
+unset ISE_AGENT_HOST_TOOLS_CURRENT
+
+detect_runtime() {
+  if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+    echo "docker"
+  elif command -v podman &>/dev/null; then
+    echo "podman"
+  else
+    echo ""
+  fi
+}
+
+RUNTIME="$(detect_runtime)"
+
+if [[ "${RUNTIME}" == "docker" ]]; then
+  COMPOSE_CMD=(docker compose)
+elif [[ "${RUNTIME}" == "podman" ]] && podman compose version &>/dev/null 2>&1; then
+  COMPOSE_CMD=(podman compose)
+elif [[ "${RUNTIME}" == "podman" ]] && command -v podman-compose &>/dev/null; then
+  COMPOSE_CMD=(podman-compose)
+else
+  COMPOSE_CMD=()
+fi
+
+checksum_file() {
+  local path="$1"
+  if command -v sha256sum &>/dev/null; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v shasum &>/dev/null; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  else
+    echo "Error: sha256sum or shasum is required to verify launcher updates." >&2
+    return 1
+  fi
+}
+
+verify_release_asset() {
+  local directory="$1"
+  local name="$2"
+  local expected actual
+  expected=$(awk -v name="${name}" '$2 == name {print $1}' "${directory}/SHA256SUMS")
+  if [[ ! "${expected}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    echo "Error: release checksum is missing for ${name}." >&2
+    return 1
+  fi
+  actual=$(checksum_file "${directory}/${name}")
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "Error: release checksum does not match ${name}." >&2
+    return 1
+  fi
+}
+
+render_compose_file() {
+  local template="$1"
+  local destination="$2"
+  local agent_id agent_suffix container_name
+  agent_id=$(sed -n 's/^AGENT_ID=//p' .env | head -1)
+  if [[ -z "${agent_id}" ]]; then
+    echo "Error: AGENT_ID is missing from .env." >&2
+    return 1
+  fi
+  agent_suffix="${agent_id##*__}"
+  agent_suffix="${agent_suffix:0:8}"
+  container_name="ise-agent-${agent_suffix}"
+  sed "s|__CONTAINER_NAME__|${container_name}|g; s|__AGENT_SUFFIX__|${agent_suffix}|g" \
+    "${template}" > "${destination}"
+}
+
+refresh_host_tools() (
+  local staging backup lock_directory
+  lock_directory="${SCRIPT_DIR}/.launcher/update.lock"
+  if ! mkdir "${lock_directory}" 2>/dev/null; then
+    echo "Error: another ISE agent host-tool update is already running." >&2
+    return 1
+  fi
+  staging=$(mktemp -d "${SCRIPT_DIR}/.ise-agent-update.XXXXXX")
+  backup="${SCRIPT_DIR}/.launcher/previous"
+  cleanup_host_update() {
+    rm -rf "${staging}"
+    rmdir "${lock_directory}" 2>/dev/null || true
+  }
+  trap cleanup_host_update EXIT
+
+  echo "Downloading the latest ISE agent host tools..."
+  curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${staging}/SHA256SUMS"
+  for name in start.sh agentctl docker-compose.yml; do
+    curl -fsSL "${RELEASE_ASSET_BASE}/${name}" -o "${staging}/${name}"
+    verify_release_asset "${staging}" "${name}"
+  done
+
+  bash -n "${staging}/start.sh" "${staging}/agentctl"
+  render_compose_file "${staging}/docker-compose.yml" "${staging}/docker-compose.rendered.yml"
+  cp .env "${staging}/.env"
+  ISE_AGENT_NETWORK_MODE="${ISE_AGENT_NETWORK_MODE:-bridge}" \
+    "${COMPOSE_CMD[@]}" -f "${staging}/docker-compose.rendered.yml" config --quiet
+
+  rm -rf "${backup}"
+  mkdir -p "${backup}"
+  cp start.sh docker-compose.yml "${backup}/"
+  cp .launcher/agentctl "${backup}/agentctl"
+
+  chmod +x "${staging}/start.sh" "${staging}/agentctl"
+  mv "${staging}/start.sh" start.sh
+  mv "${staging}/agentctl" .launcher/agentctl
+  mv "${staging}/docker-compose.rendered.yml" docker-compose.yml
+  echo "Updated start.sh, agentctl, and docker-compose.yml. Previous files are in .launcher/previous/."
+)
+
+restore_host_tools() {
+  local backup="${SCRIPT_DIR}/.launcher/previous"
+  if [[ ! -f "${backup}/start.sh" ]] \
+    || [[ ! -f "${backup}/agentctl" ]] \
+    || [[ ! -f "${backup}/docker-compose.yml" ]]; then
+    echo "Error: previous host tools are unavailable for rollback." >&2
+    return 1
+  fi
+  cp "${backup}/start.sh" start.sh
+  cp "${backup}/agentctl" .launcher/agentctl
+  cp "${backup}/docker-compose.yml" docker-compose.yml
+  chmod +x start.sh .launcher/agentctl
+  echo "Restored the previous ISE agent host tools." >&2
+}
+
+load_network_mode() {
+  local network_mode="${ISE_AGENT_NETWORK_MODE:-}"
+
+  if [[ -z "${network_mode}" ]] && [[ -r ".env" ]]; then
+    network_mode=$(
+      # shellcheck disable=SC1091
+      source .env
+      printf '%s' "${ISE_AGENT_NETWORK_MODE:-}"
+    )
+  fi
+
+  ISE_AGENT_NETWORK_MODE="${network_mode:-bridge}"
+  case "${ISE_AGENT_NETWORK_MODE}" in
+    bridge|host)
+      ;;
+    *)
+      echo "Error: ISE_AGENT_NETWORK_MODE must be bridge or host." >&2
+      exit 1
+      ;;
+  esac
+
+  export ISE_AGENT_NETWORK_MODE
+}
+
+check_prerequisites() {
+  if [[ -z "${RUNTIME}" ]]; then
+    echo "Error: No container runtime found. Install docker or podman." >&2
+    exit 1
+  fi
+  for file in "${KEY_FILE}" "${CERT_FILE}" ".env"; do
+    if [[ ! -f "${file}" ]]; then
+      echo "Error: ${file} not found. Make sure you've extracted the full agent package." >&2
+      exit 1
+    fi
+  done
+}
+
+pull_image_once() {
+  if [[ "${PULL_IMAGE}" != "1" ]] || [[ "${IMAGE_PULLED}" == "1" ]]; then
+    return
+  fi
+
+  echo "Pulling latest ISE agent image..."
+  "${RUNTIME}" pull "${IMAGE}"
+  IMAGE_PULLED=1
+}
+
+run_in_container() {
+  pull_image_once
+  local script="$1"
+  shift
+  local tty_args=()
+  local network_args=()
+  [[ -t 0 ]] && tty_args=(-t)
+  [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
+  "${RUNTIME}" run --rm --pull=never "${network_args[@]}" -i "${tty_args[@]}" \
+    --env-file "$(pwd)/.env" \
+    -v "$(pwd)/certs:/app/certs" \
+    --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
+}
+
+redeem_packaged_bootstrap() {
+  local host_user
+  pull_image_once
+  host_user="$(id -u):$(id -g)"
+  "${RUNTIME}" run --rm --pull=never \
+    --user "${host_user}" \
+    -v "$(pwd):/bootstrap" \
+    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
+    --packaged \
+    --output-dir /bootstrap
+}
+
+compose_cmd() {
+  "${COMPOSE_CMD[@]}" "$@"
+}
+
+compose_restart() {
+  compose_cmd down 2>/dev/null || true
+  if ! compose_cmd up -d; then
+    return 1
+  fi
+  echo "View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+}
+
+ACTION=""
+for arg in "$@"; do
+  case "${arg}" in
+    --reconfigure) ACTION="reconfigure" ;;
+    --stop) ACTION="stop" ;;
+    --update) ACTION="update" ;;
+    --enable-pxgrid) ACTION="enable-pxgrid" ;;
+    --disable-pxgrid) ACTION="disable-pxgrid" ;;
+    --no-pull) PULL_IMAGE=0 ;;
+    *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+  esac
+done
+
+if [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
+  echo "Error: No container runtime found. Install docker or podman." >&2
+  exit 1
+fi
+
+load_network_mode
+
+if [[ "${ACTION}" == "stop" ]]; then
+  echo "Stopping ISE agent..."
+  compose_cmd down
+  exit 0
+fi
+
+if [[ "${ACTION}" == "update" ]]; then
+  if [[ "${HOST_TOOLS_CURRENT}" != "1" ]]; then
+    refresh_host_tools
+    exec env ISE_AGENT_HOST_TOOLS_CURRENT=1 .launcher/agentctl "$@"
+  fi
+  if [[ "${PULL_IMAGE}" != "1" ]]; then
+    echo "Skipping image pull (--no-pull). Restarting with local image."
+  fi
+  pull_image_once
+  if ! compose_restart; then
+    echo "Error: the updated host tools could not restart the ISE agent; rolling back." >&2
+    restore_host_tools
+    compose_cmd up -d || true
+    exit 1
+  fi
+  exit 0
+fi
+
+check_prerequisites
+redeem_packaged_bootstrap
+
+if [[ "${ACTION}" == "enable-pxgrid" ]]; then
+  run_in_container setup_pxgrid.py enable
+  compose_restart
+  exit 0
+fi
+
+if [[ "${ACTION}" == "disable-pxgrid" ]]; then
+  run_in_container setup_pxgrid.py disable
+  compose_restart
+  exit 0
+fi
+
+FIRST_RUN=0
+if [[ "${ACTION}" == "reconfigure" ]] || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
+  [[ ! -f "${CREDENTIALS_FILE}" ]] && FIRST_RUN=1
+  echo ""
+  echo "Running ISE credential setup inside container..."
+  run_in_container setup_credentials.py
+fi
+
+if [[ "${FIRST_RUN}" == "1" ]] && [[ ! -f "./certs/.pxgrid.enc" ]]; then
+  run_in_container setup_pxgrid.py first-run
+fi
+
+echo ""
+echo "Starting ISE agent..."
+pull_image_once
+compose_cmd up -d
+echo ""
+echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
