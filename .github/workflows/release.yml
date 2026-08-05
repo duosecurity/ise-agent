@@ -16,7 +16,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Validate scripts
-        run: bash -n install.sh start.sh
+        run: |
+          bash -n install.sh start.sh agentctl tests/test-host-tools.sh
+          tests/test-host-tools.sh
+
+      - name: Generate release checksums
+        run: sha256sum install.sh start.sh agentctl docker-compose.yml > SHA256SUMS
 
       - name: Publish release assets
         env:
@@ -26,7 +31,9 @@ jobs:
           gh release create "${tag}" \
             install.sh \
             start.sh \
+            agentctl \
             docker-compose.yml \
+            SHA256SUMS \
             --target "${GITHUB_SHA}" \
             --generate-notes \
             --latest=false
