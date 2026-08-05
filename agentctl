@@ -207,6 +207,18 @@ run_in_container() {
     --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
 }
 
+redeem_packaged_bootstrap() {
+  local host_user
+  pull_image_once
+  host_user="$(id -u):$(id -g)"
+  "${RUNTIME}" run --rm --pull=never \
+    --user "${host_user}" \
+    -v "$(pwd):/bootstrap" \
+    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
+    --packaged \
+    --output-dir /bootstrap
+}
+
 compose_cmd() {
   "${COMPOSE_CMD[@]}" "$@"
 }
@@ -264,6 +276,7 @@ if [[ "${ACTION}" == "update" ]]; then
 fi
 
 check_prerequisites
+redeem_packaged_bootstrap
 
 if [[ "${ACTION}" == "enable-pxgrid" ]]; then
   run_in_container setup_pxgrid.py enable

@@ -2,58 +2,66 @@
 set -euo pipefail
 
 RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
+IMAGE="ghcr.io/duosecurity/ise-agent:latest"
 
-# Bundle: base64(iotEndpoint)|base64(tenantId)|base64(agentId)|base64(mqttTopicPrefix)|base64(cert)|base64(key)
 BUNDLE="${1:-}"
-if [[ -z "$BUNDLE" ]]; then
+set --
+
+if [[ -z "${BUNDLE}" ]]; then
   echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
   exit 1
 fi
 
-decode_field() {
-  echo "$BUNDLE" | cut -d'|' -f"$1" | base64 --decode
+detect_runtime() {
+  if command -v docker &>/dev/null; then
+    echo "docker"
+  elif command -v podman &>/dev/null; then
+    echo "podman"
+  else
+    echo ""
+  fi
 }
 
-IOT_ENDPOINT=$(decode_field 1)
-TENANT_ID=$(decode_field 2)
-AGENT_ID=$(decode_field 3)
-MQTT_TOPIC_PREFIX=$(decode_field 4)
-CERT=$(decode_field 5)
-PRIVATE_KEY=$(decode_field 6)
+RUNTIME="$(detect_runtime)"
+if [[ -z "${RUNTIME}" ]]; then
+  echo "Error: Docker or Podman is required to install the ISE agent." >&2
+  exit 1
+fi
+HOST_USER="$(id -u):$(id -g)"
 
-# Derive per-agent suffix (matches container name and ZIP package naming)
-AGENT_SUFFIX=$(echo "$AGENT_ID" | awk -F'__' '{print $NF}' | cut -c1-8)
-CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
-INSTALL_DIR="$(pwd)"
-
+INSTALL_DIR="$(pwd -P)"
 echo "Installing ISE agent in ${INSTALL_DIR}..."
-mkdir -p "${INSTALL_DIR}/certs"
 
-# Write .env
-cat > "${INSTALL_DIR}/.env" <<EOF
-IOT_ENDPOINT=${IOT_ENDPOINT}
-TENANT_ID=${TENANT_ID}
-AGENT_ID=${AGENT_ID}
-MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX}
-EOF
+TEMP_DIR="$(mktemp -d "${INSTALL_DIR}/.ise-agent-install.XXXXXX")"
+cleanup() {
+  rm -rf "${TEMP_DIR}"
+}
+trap cleanup EXIT
 
-# Write certs
-printf '%s' "$CERT" > "${INSTALL_DIR}/certs/certificate.pem.crt"
-printf '%s' "$PRIVATE_KEY" > "${INSTALL_DIR}/certs/private.pem.key"
-chmod 600 "${INSTALL_DIR}/certs/"*
+for target in \
+  "${INSTALL_DIR}/.env" \
+  "${INSTALL_DIR}/docker-compose.yml" \
+  "${INSTALL_DIR}/start.sh" \
+  "${INSTALL_DIR}/.launcher/agentctl" \
+  "${INSTALL_DIR}/certs/certificate.pem.crt" \
+  "${INSTALL_DIR}/certs/private.pem.key"; do
+  if [[ -e "${target}" ]]; then
+    echo "Error: refusing to overwrite existing agent configuration at ${target}." >&2
+    exit 1
+  fi
+done
 
-# Download the versioned host tools from the latest published release
-mkdir -p "${INSTALL_DIR}/.launcher"
-curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${INSTALL_DIR}/.launcher/SHA256SUMS"
-curl -fsSL "${RELEASE_ASSET_BASE}/docker-compose.yml" -o "${INSTALL_DIR}/.launcher/docker-compose.yml.template"
-curl -fsSL "${RELEASE_ASSET_BASE}/start.sh" -o "${INSTALL_DIR}/start.sh"
-curl -fsSL "${RELEASE_ASSET_BASE}/agentctl" -o "${INSTALL_DIR}/.launcher/agentctl"
+echo "Downloading the current ISE agent launcher..."
+curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${TEMP_DIR}/SHA256SUMS"
+curl -fsSL "${RELEASE_ASSET_BASE}/docker-compose.yml" -o "${TEMP_DIR}/docker-compose.yml.template"
+curl -fsSL "${RELEASE_ASSET_BASE}/start.sh" -o "${TEMP_DIR}/start.sh"
+curl -fsSL "${RELEASE_ASSET_BASE}/agentctl" -o "${TEMP_DIR}/agentctl"
 
 verify_asset() {
   local name="$1"
   local path="$2"
   local expected actual
-  expected=$(awk -v name="${name}" '$2 == name {print $1}' "${INSTALL_DIR}/.launcher/SHA256SUMS")
+  expected=$(awk -v name="${name}" '$2 == name {print $1}' "${TEMP_DIR}/SHA256SUMS")
   if command -v sha256sum &>/dev/null; then
     actual=$(sha256sum "${path}" | awk '{print $1}')
   elif command -v shasum &>/dev/null; then
@@ -68,18 +76,47 @@ verify_asset() {
   fi
 }
 
-verify_asset start.sh "${INSTALL_DIR}/start.sh"
-verify_asset agentctl "${INSTALL_DIR}/.launcher/agentctl"
-verify_asset docker-compose.yml "${INSTALL_DIR}/.launcher/docker-compose.yml.template"
-bash -n "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/.launcher/agentctl"
+verify_asset start.sh "${TEMP_DIR}/start.sh"
+verify_asset agentctl "${TEMP_DIR}/agentctl"
+verify_asset docker-compose.yml "${TEMP_DIR}/docker-compose.yml.template"
+bash -n "${TEMP_DIR}/start.sh" "${TEMP_DIR}/agentctl"
+
+echo "Pulling the ISE agent image..."
+"${RUNTIME}" pull "${IMAGE}"
+
+echo "Installing the ISE agent credential bundle inside the container..."
+printf '%s' "${BUNDLE}" | "${RUNTIME}" run --rm --pull=never -i \
+  --user "${HOST_USER}" \
+  -v "${INSTALL_DIR}:/bootstrap" \
+  --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
+  --bundle \
+  --output-dir /bootstrap
+BUNDLE=""
+
+AGENT_ID=$(sed -n 's/^AGENT_ID=//p' "${INSTALL_DIR}/.env")
+if [[ ! "${AGENT_ID}" =~ __ISE__[A-Za-z0-9-]+$ ]]; then
+  echo "Error: bootstrap did not return an agent ID." >&2
+  exit 1
+fi
+
+AGENT_SUFFIX="${AGENT_ID##*__}"
+AGENT_SUFFIX="${AGENT_SUFFIX:0:8}"
+CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
+
 sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g" \
-  "${INSTALL_DIR}/.launcher/docker-compose.yml.template" > "${INSTALL_DIR}/docker-compose.yml"
+  "${TEMP_DIR}/docker-compose.yml.template" > "${TEMP_DIR}/docker-compose.yml"
+mkdir -p "${INSTALL_DIR}/.launcher"
+mv "${TEMP_DIR}/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
+mv "${TEMP_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
+mv "${TEMP_DIR}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
 chmod +x "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/.launcher/agentctl"
-rm -f "${INSTALL_DIR}/.launcher/SHA256SUMS" "${INSTALL_DIR}/.launcher/docker-compose.yml.template"
 
 echo ""
 echo "Installation complete. Starting ISE agent..."
 echo ""
 
+cleanup
+trap - EXIT
+
 # Re-attach to terminal so start.sh can prompt for ISE credentials interactively
-exec "${INSTALL_DIR}/start.sh" < /dev/tty
+exec "${INSTALL_DIR}/start.sh" --no-pull < /dev/tty

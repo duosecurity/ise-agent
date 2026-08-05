@@ -12,6 +12,7 @@ trap cleanup EXIT
 RELEASE_DIR="${TEST_ROOT}/release"
 INSTALL_DIR="${TEST_ROOT}/install"
 BOOTSTRAP_DIR="${TEST_ROOT}/bootstrap"
+PACKAGE_DIR="${TEST_ROOT}/package"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
 BIN_DIR="${TEST_ROOT}/bin"
 COMMAND_LOG="${TEST_ROOT}/commands.log"
@@ -19,6 +20,8 @@ mkdir -p \
   "${RELEASE_DIR}" \
   "${INSTALL_DIR}/.launcher" \
   "${BOOTSTRAP_DIR}" \
+  "${PACKAGE_DIR}/.launcher" \
+  "${PACKAGE_DIR}/certs" \
   "${ROLLBACK_DIR}/.launcher" \
   "${BIN_DIR}"
 
@@ -83,6 +86,22 @@ ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
   "${BOOTSTRAP_DIR}/start.sh" --stop
 
 test -x "${BOOTSTRAP_DIR}/.launcher/agentctl"
+
+cp "${REPOSITORY_ROOT}/start.sh" "${PACKAGE_DIR}/start.sh"
+cp "${REPOSITORY_ROOT}/agentctl" "${PACKAGE_DIR}/.launcher/agentctl"
+cp "${REPOSITORY_ROOT}/docker-compose.yml" "${PACKAGE_DIR}/docker-compose.yml"
+chmod +x "${PACKAGE_DIR}/start.sh" "${PACKAGE_DIR}/.launcher/agentctl"
+cat > "${PACKAGE_DIR}/.env" <<'EOF'
+AGENT_ID=test-tenant__ISE__12345678-abcd
+EOF
+printf '%s\n' 'https://api.example.test/ise-agent/bootstrap' > "${PACKAGE_DIR}/certs/certificate.pem.crt"
+printf '%s\n' 'iseb1.token.secret' > "${PACKAGE_DIR}/certs/private.pem.key"
+touch "${PACKAGE_DIR}/certs/.credentials.enc" "${PACKAGE_DIR}/certs/.pxgrid.enc"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PACKAGE_DIR}/start.sh" --no-pull
+
+grep -q '/app/bootstrap_iot.py --packaged --output-dir /bootstrap' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${ROLLBACK_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${ROLLBACK_DIR}/.launcher/agentctl"
