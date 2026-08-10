@@ -26,7 +26,7 @@ HOST_TOOLS_CURRENT="${ISE_AGENT_HOST_TOOLS_CURRENT:-0}"
 unset ISE_AGENT_HOST_TOOLS_CURRENT
 
 detect_runtime() {
-  if command -v docker &>/dev/null; then
+  if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
     echo "docker"
   elif command -v podman &>/dev/null; then
     echo "podman"
