@@ -1,0 +1,21 @@
+agentctl
+  s_e75cda1e86e915::t_185aa4c21e3cc9 249,258,267-268
+README.md
+  s_e75cda1e86e915::t_185aa4c21e3cc9 62,68,74,77,80-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "4eac793a668ece8c74485b19360555fe1f85f232",
+  "prompts": {},
+  "sessions": {
+    "s_e75cda1e86e915": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "e24568af-60b0-4784-8b30-9e4915a1045d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
