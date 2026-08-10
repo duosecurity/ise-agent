@@ -342,7 +342,7 @@ for arg in "$@"; do
   esac
 done
 
-if [[ "${ACTION}" != "collect-logs" ]] && [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
+if [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
   echo "Error: No container runtime found. Install docker or podman." >&2
   exit 1
 fi
