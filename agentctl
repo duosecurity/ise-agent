@@ -122,14 +122,10 @@ refresh_host_tools() (
   rm -rf "${backup}"
   mkdir -p "${backup}"
   cp start.sh docker-compose.yml "${backup}/"
-  if [[ -f "collect-logs.sh" ]]; then
-    cp collect-logs.sh "${backup}/collect-logs.sh"
-  fi
   cp .launcher/agentctl "${backup}/agentctl"
 
   chmod +x "${staging}/start.sh" "${staging}/agentctl"
   mv "${staging}/start.sh" start.sh
-  rm -f collect-logs.sh
   mv "${staging}/agentctl" .launcher/agentctl
   mv "${staging}/docker-compose.rendered.yml" docker-compose.yml
   echo "Updated start.sh, agentctl, and docker-compose.yml. Previous files are in .launcher/previous/."
@@ -144,15 +140,9 @@ restore_host_tools() {
     return 1
   fi
   cp "${backup}/start.sh" start.sh
-  if [[ -f "${backup}/collect-logs.sh" ]]; then
-    cp "${backup}/collect-logs.sh" collect-logs.sh
-  else
-    rm -f collect-logs.sh
-  fi
   cp "${backup}/agentctl" .launcher/agentctl
   cp "${backup}/docker-compose.yml" docker-compose.yml
   chmod +x start.sh .launcher/agentctl
-  [[ -f collect-logs.sh ]] && chmod +x collect-logs.sh
   echo "Restored the previous ISE agent host tools." >&2
 }
 
