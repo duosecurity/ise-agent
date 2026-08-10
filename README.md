@@ -68,7 +68,8 @@ customization, put it in `docker-compose.override.yml`; the generated base
 `./start.sh --collect-logs` collects ICA container logs and selected ISE debug logs by
 default. The default ISE debug logs are `ise-psc.log`, `report.log`,
 `replication.log`, `sch.log`, and `pxgrid-server.log`, downloaded directly
-through ISE debug-log APIs without generating a full support bundle.
+through ISE debug-log APIs without generating a full support bundle. The command
+writes one host-owned archive under `logs/ise-agent-logs-<timestamp>.tar.gz`.
 
 To reduce the log collection time window:
 
