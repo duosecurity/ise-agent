@@ -26,7 +26,7 @@ HOST_TOOLS_CURRENT="${ISE_AGENT_HOST_TOOLS_CURRENT:-0}"
 unset ISE_AGENT_HOST_TOOLS_CURRENT
 
 detect_runtime() {
-  if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+  if command -v docker &>/dev/null; then
     echo "docker"
   elif command -v podman &>/dev/null; then
     echo "podman"
@@ -122,10 +122,14 @@ refresh_host_tools() (
   rm -rf "${backup}"
   mkdir -p "${backup}"
   cp start.sh docker-compose.yml "${backup}/"
+  if [[ -f "collect-logs.sh" ]]; then
+    cp collect-logs.sh "${backup}/collect-logs.sh"
+  fi
   cp .launcher/agentctl "${backup}/agentctl"
 
   chmod +x "${staging}/start.sh" "${staging}/agentctl"
   mv "${staging}/start.sh" start.sh
+  rm -f collect-logs.sh
   mv "${staging}/agentctl" .launcher/agentctl
   mv "${staging}/docker-compose.rendered.yml" docker-compose.yml
   echo "Updated start.sh, agentctl, and docker-compose.yml. Previous files are in .launcher/previous/."
@@ -140,9 +144,15 @@ restore_host_tools() {
     return 1
   fi
   cp "${backup}/start.sh" start.sh
+  if [[ -f "${backup}/collect-logs.sh" ]]; then
+    cp "${backup}/collect-logs.sh" collect-logs.sh
+  else
+    rm -f collect-logs.sh
+  fi
   cp "${backup}/agentctl" .launcher/agentctl
   cp "${backup}/docker-compose.yml" docker-compose.yml
   chmod +x start.sh .launcher/agentctl
+  [[ -f collect-logs.sh ]] && chmod +x collect-logs.sh
   echo "Restored the previous ISE agent host tools." >&2
 }
 
@@ -181,6 +191,103 @@ check_prerequisites() {
       exit 1
     fi
   done
+}
+
+detect_docker_socket() {
+  local candidate env_name env_value runtime_dir user_runtime_dir
+
+  for env_name in DOCKER_HOST CONTAINER_HOST; do
+    env_value="${!env_name:-}"
+    case "${env_value}" in
+      unix://*)
+        candidate="${env_value#unix://}"
+        if [[ -S "${candidate}" ]]; then
+          echo "${candidate}"
+          return
+        fi
+        ;;
+    esac
+  done
+
+  runtime_dir="${XDG_RUNTIME_DIR:-}"
+  user_runtime_dir="/run/user/$(id -u)"
+
+  for candidate in \
+    /var/run/docker.sock \
+    /run/docker.sock \
+    /run/podman/podman.sock \
+    "${user_runtime_dir}/docker.sock" \
+    "${user_runtime_dir}/podman/podman.sock"; do
+    if [[ -S "${candidate}" ]]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+
+  if [[ -n "${runtime_dir}" ]] && [[ "${runtime_dir}" != "${user_runtime_dir}" ]]; then
+    for candidate in "${runtime_dir}/docker.sock" "${runtime_dir}/podman/podman.sock"; do
+      if [[ -S "${candidate}" ]]; then
+        echo "${candidate}"
+        return
+      fi
+    done
+  fi
+  echo ""
+}
+
+collect_logs() {
+  local logs_dir collect_logs_file docker_socket
+  local tty_args=()
+  local network_args=()
+  local socket_args=()
+  local collect_logs_args=()
+  local since_hours_args=()
+
+  check_prerequisites
+  logs_dir="$(pwd)/logs"
+  collect_logs_file="$(pwd)/collect_logs.py"
+
+  mkdir -p "${logs_dir}"
+
+  if ! "${RUNTIME}" image inspect "${IMAGE}" >/dev/null 2>&1; then
+    echo "Error: ICA Agent image is not available locally, Run ./start.sh to configure ISE Agent." >&2
+    exit 1
+  fi
+
+  docker_socket="$(detect_docker_socket)"
+  if [[ -n "${docker_socket}" ]]; then
+    socket_args=(-v "${docker_socket}:/var/run/docker.sock")
+  else
+    echo "Warning: Docker socket not found; ICA docker logs will be skipped." >&2
+  fi
+
+  [[ -t 0 ]] && tty_args=(-t)
+  [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
+  if [[ -f "${collect_logs_file}" ]]; then
+    collect_logs_args=(-v "${collect_logs_file}:/app/collect_logs.py:ro")
+  fi
+
+  if [[ -v ISE_COLLECT_LOGS_SINCE_HOURS ]]; then
+    since_hours_args=(-e "ISE_COLLECT_LOGS_SINCE_HOURS=${ISE_COLLECT_LOGS_SINCE_HOURS}")
+  fi
+
+  echo "Starting log collection..."
+  echo "Output directory: ${logs_dir}"
+  echo ""
+
+  "${RUNTIME}" run --rm --pull=never \
+    "${network_args[@]}" \
+    -i "${tty_args[@]}" \
+    --env-file "$(pwd)/.env" \
+    -v "$(pwd)/certs:/app/certs" \
+    -v "${logs_dir}:/app/logs" \
+    "${collect_logs_args[@]}" \
+    "${socket_args[@]}" \
+    "${since_hours_args[@]}" \
+    --entrypoint python "${IMAGE}" -u /app/collect_logs.py
+
+  echo ""
+  echo "Log collection complete. Files are in: ${logs_dir}"
 }
 
 pull_image_once() {
@@ -237,6 +344,7 @@ for arg in "$@"; do
     --reconfigure) ACTION="reconfigure" ;;
     --stop) ACTION="stop" ;;
     --update) ACTION="update" ;;
+    --collect-logs|--colect-logs) ACTION="collect-logs" ;;
     --enable-pxgrid) ACTION="enable-pxgrid" ;;
     --disable-pxgrid) ACTION="disable-pxgrid" ;;
     --no-pull) PULL_IMAGE=0 ;;
@@ -244,7 +352,7 @@ for arg in "$@"; do
   esac
 done
 
-if [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
+if [[ "${ACTION}" != "collect-logs" ]] && [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
   echo "Error: No container runtime found. Install docker or podman." >&2
   exit 1
 fi
@@ -272,6 +380,11 @@ if [[ "${ACTION}" == "update" ]]; then
     compose_cmd up -d || true
     exit 1
   fi
+  exit 0
+fi
+
+if [[ "${ACTION}" == "collect-logs" ]]; then
+  collect_logs
   exit 0
 fi
 

@@ -59,8 +59,26 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
 ./start.sh --update       # Update host tools and the agent image, then restart
+./start.sh --collect-logs # Collect ICA and selected ISE debug logs
 ./start.sh --stop         # Stop the agent
 ```
+
+### Faster log collection
+
+`./start.sh --collect-logs` collects ICA container logs and selected ISE debug logs by
+default. The default ISE debug logs are `ise-psc.log`, `report.log`,
+`replication.log`, `sch.log`, and `pxgrid-server.log`, downloaded directly
+through ISE debug-log APIs without generating a full support bundle.
+
+To reduce the log collection time window:
+
+```sh
+ISE_COLLECT_LOGS_SINCE_HOURS=2 ./start.sh --collect-logs
+```
+
+If ICA Docker logs or direct ISE debug logs are unavailable, the collector logs
+the error and continues with the other source. Log collection overrides can also
+be added to `.env`.
 
 ## Files
 
