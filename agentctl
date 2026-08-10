@@ -246,7 +246,7 @@ collect_logs() {
   archive_args=(-e "ISE_COLLECT_LOGS_ARCHIVE=/app/logs/${archive_name}")
 
   if ! "${RUNTIME}" image inspect "${IMAGE}" >/dev/null 2>&1; then
-    echo "Error: ICA Agent image is not available locally, Run ./start.sh to configure ISE Agent." >&2
+    echo "Error: ISE agent image is not available locally, Run ./start.sh to configure ISE Agent." >&2
     rm -f "${archive_path}"
     exit 1
   fi
@@ -255,7 +255,7 @@ collect_logs() {
   if [[ -n "${docker_socket}" ]]; then
     socket_args=(-v "${docker_socket}:/var/run/docker.sock")
   else
-    echo "Warning: Docker socket not found; ICA docker logs will be skipped." >&2
+    echo "Warning: Docker socket not found; ISE agent container logs will be skipped." >&2
   fi
 
   [[ -t 0 ]] && tty_args=(-t)
@@ -264,8 +264,8 @@ collect_logs() {
     collect_logs_args=(-v "${collect_logs_file}:/app/collect_logs.py:ro")
   fi
 
-  if [[ -v ISE_COLLECT_LOGS_SINCE_HOURS ]]; then
-    since_hours_args=(-e "ISE_COLLECT_LOGS_SINCE_HOURS=${ISE_COLLECT_LOGS_SINCE_HOURS}")
+  if [[ -v ISE_AGENT_LOGS_SINCE_HOURS ]]; then
+    since_hours_args=(-e "ISE_AGENT_LOGS_SINCE_HOURS=${ISE_AGENT_LOGS_SINCE_HOURS}")
   fi
 
   echo "Starting log collection..."
