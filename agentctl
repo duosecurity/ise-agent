@@ -21,9 +21,12 @@ CONTAINER_NAME=$(awk '/container_name:/ {print $2; exit}' docker-compose.yml 2>/
 CONTAINER_NAME="${CONTAINER_NAME:-ise-agent}"
 PULL_IMAGE=1
 IMAGE_PULLED=0
+FULL_RESYNC=0
 ISE_AGENT_NETWORK_MODE="${ISE_AGENT_NETWORK_MODE:-}"
 HOST_TOOLS_CURRENT="${ISE_AGENT_HOST_TOOLS_CURRENT:-0}"
+HOST_TOOLS_CHANGED="${ISE_AGENT_HOST_TOOLS_CHANGED:-0}"
 unset ISE_AGENT_HOST_TOOLS_CURRENT
+unset ISE_AGENT_HOST_TOOLS_CHANGED
 
 detect_runtime() {
   if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
@@ -92,7 +95,8 @@ render_compose_file() {
 }
 
 refresh_host_tools() (
-  local staging backup lock_directory
+  local staging backup lock_directory result_path
+  result_path="${SCRIPT_DIR}/.launcher/host-tools-update-result"
   lock_directory="${SCRIPT_DIR}/.launcher/update.lock"
   if ! mkdir "${lock_directory}" 2>/dev/null; then
     echo "Error: another ISE agent host-tool update is already running." >&2
@@ -119,6 +123,14 @@ refresh_host_tools() (
   ISE_AGENT_NETWORK_MODE="${ISE_AGENT_NETWORK_MODE:-bridge}" \
     "${COMPOSE_CMD[@]}" -f "${staging}/docker-compose.rendered.yml" config --quiet
 
+  if cmp -s start.sh "${staging}/start.sh" \
+    && cmp -s .launcher/agentctl "${staging}/agentctl" \
+    && cmp -s docker-compose.yml "${staging}/docker-compose.rendered.yml"; then
+    printf '%s\n' 0 > "${result_path}"
+    echo "ISE agent host tools are already current."
+    return
+  fi
+
   rm -rf "${backup}"
   mkdir -p "${backup}"
   cp start.sh docker-compose.yml "${backup}/"
@@ -128,6 +140,7 @@ refresh_host_tools() (
   mv "${staging}/start.sh" start.sh
   mv "${staging}/agentctl" .launcher/agentctl
   mv "${staging}/docker-compose.rendered.yml" docker-compose.yml
+  printf '%s\n' 1 > "${result_path}"
   echo "Updated start.sh, agentctl, and docker-compose.yml. Previous files are in .launcher/previous/."
 )
 
@@ -193,6 +206,101 @@ pull_image_once() {
   IMAGE_PULLED=1
 }
 
+image_id() {
+  "${RUNTIME}" image inspect --format '{{.Id}}' "${IMAGE}" 2>/dev/null || true
+}
+
+request_full_resync() {
+  local checkpoint="${SCRIPT_DIR}/certs/.sync-state.json"
+  if [[ -e "${checkpoint}" ]]; then
+    rm "${checkpoint}"
+    echo "Cleared the directory synchronization checkpoint; the agent will perform a full resync."
+  else
+    echo "No directory synchronization checkpoint exists; the next start will perform a full resync."
+  fi
+}
+
+shell_quote() {
+  printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
+automatic_update_wrapper() {
+  local wrapper_path="$1"
+  local quoted_path quoted_script_dir
+  quoted_script_dir=$(shell_quote "${SCRIPT_DIR}")
+  quoted_path=$(shell_quote "${PATH}")
+  cat > "${wrapper_path}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export PATH=${quoted_path}
+cd ${quoted_script_dir}
+exec >> .launcher/auto-update.log 2>&1
+printf '\\n%s Starting scheduled ISE agent update.\\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+exec ./start.sh --update
+EOF
+  chmod +x "${wrapper_path}"
+}
+
+without_automatic_update_crontab() {
+  local begin_marker="$1"
+  local end_marker="$2"
+  awk -v begin_marker="${begin_marker}" -v end_marker="${end_marker}" '
+    $0 == begin_marker { skipping = 1; next }
+    $0 == end_marker { skipping = 0; next }
+    !skipping { print }
+  '
+}
+
+enable_automatic_updates() {
+  if ! command -v crontab &>/dev/null; then
+    echo "Error: crontab is required to enable automatic updates." >&2
+    return 1
+  fi
+
+  local begin_marker end_marker existing filtered schedule_seed minute hour wrapper_path crontab_path
+  begin_marker="# BEGIN CII ISE Agent automatic update: ${SCRIPT_DIR}"
+  end_marker="# END CII ISE Agent automatic update: ${SCRIPT_DIR}"
+  existing=$(crontab -l 2>/dev/null || true)
+  filtered=$(printf '%s\n' "${existing}" | without_automatic_update_crontab "${begin_marker}" "${end_marker}")
+  schedule_seed=$(printf '%s' "${SCRIPT_DIR}" | cksum | awk '{print $1}')
+  minute=$((schedule_seed % 60))
+  hour=$(((schedule_seed / 60) % 24))
+  wrapper_path="${SCRIPT_DIR}/.launcher/auto-update.sh"
+  automatic_update_wrapper "${wrapper_path}"
+
+  crontab_path=$(mktemp "${SCRIPT_DIR}/.launcher/crontab.XXXXXX")
+  {
+    printf '%s\n' "${filtered}"
+    printf '%s\n' "${begin_marker}"
+    printf '%d %d * * * bash %s\n' "${minute}" "${hour}" "$(shell_quote "${wrapper_path}")"
+    printf '%s\n' "${end_marker}"
+  } > "${crontab_path}"
+  crontab "${crontab_path}"
+  rm "${crontab_path}"
+  echo "Enabled daily automatic ISE agent updates at ${hour}:$(printf '%02d' "${minute}") host time."
+  echo "Update output is written to .launcher/auto-update.log."
+}
+
+disable_automatic_updates() {
+  if ! command -v crontab &>/dev/null; then
+    echo "Error: crontab is required to disable automatic updates." >&2
+    return 1
+  fi
+
+  local begin_marker end_marker existing crontab_path
+  begin_marker="# BEGIN CII ISE Agent automatic update: ${SCRIPT_DIR}"
+  end_marker="# END CII ISE Agent automatic update: ${SCRIPT_DIR}"
+  existing=$(crontab -l 2>/dev/null || true)
+  crontab_path=$(mktemp "${SCRIPT_DIR}/.launcher/crontab.XXXXXX")
+  printf '%s\n' "${existing}" \
+    | without_automatic_update_crontab "${begin_marker}" "${end_marker}" \
+    > "${crontab_path}"
+  crontab "${crontab_path}"
+  rm "${crontab_path}"
+  rm -f "${SCRIPT_DIR}/.launcher/auto-update.sh"
+  echo "Disabled automatic ISE agent updates."
+}
+
 run_in_container() {
   pull_image_once
   local script="$1"
@@ -237,6 +345,9 @@ for arg in "$@"; do
     --reconfigure) ACTION="reconfigure" ;;
     --stop) ACTION="stop" ;;
     --update) ACTION="update" ;;
+    --enable-auto-update) ACTION="enable-auto-update" ;;
+    --disable-auto-update) ACTION="disable-auto-update" ;;
+    --full-resync) FULL_RESYNC=1 ;;
     --enable-pxgrid) ACTION="enable-pxgrid" ;;
     --disable-pxgrid) ACTION="disable-pxgrid" ;;
     --no-pull) PULL_IMAGE=0 ;;
@@ -244,12 +355,27 @@ for arg in "$@"; do
   esac
 done
 
+if [[ "${FULL_RESYNC}" == "1" ]] && [[ "${ACTION}" != "update" ]]; then
+  echo "Error: --full-resync must be used with --update." >&2
+  exit 1
+fi
+
 if [[ "${#COMPOSE_CMD[@]}" == "0" ]]; then
   echo "Error: No container runtime found. Install docker or podman." >&2
   exit 1
 fi
 
 load_network_mode
+
+if [[ "${ACTION}" == "enable-auto-update" ]]; then
+  enable_automatic_updates
+  exit 0
+fi
+
+if [[ "${ACTION}" == "disable-auto-update" ]]; then
+  disable_automatic_updates
+  exit 0
+fi
 
 if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
@@ -259,16 +385,39 @@ fi
 
 if [[ "${ACTION}" == "update" ]]; then
   if [[ "${HOST_TOOLS_CURRENT}" != "1" ]]; then
+    rm -f "${SCRIPT_DIR}/.launcher/host-tools-update-result"
     refresh_host_tools
-    exec env ISE_AGENT_HOST_TOOLS_CURRENT=1 .launcher/agentctl "$@"
+    HOST_TOOLS_CHANGED=$(cat "${SCRIPT_DIR}/.launcher/host-tools-update-result")
+    rm "${SCRIPT_DIR}/.launcher/host-tools-update-result"
+    exec env \
+      ISE_AGENT_HOST_TOOLS_CURRENT=1 \
+      ISE_AGENT_HOST_TOOLS_CHANGED="${HOST_TOOLS_CHANGED}" \
+      .launcher/agentctl "$@"
   fi
+  previous_image_id=$(image_id)
   if [[ "${PULL_IMAGE}" != "1" ]]; then
-    echo "Skipping image pull (--no-pull). Restarting with local image."
+    echo "Skipping image pull (--no-pull)."
   fi
   pull_image_once
+  current_image_id=$(image_id)
+  if [[ "${HOST_TOOLS_CHANGED}" != "1" ]] \
+    && [[ "${previous_image_id}" == "${current_image_id}" ]] \
+    && [[ "${FULL_RESYNC}" != "1" ]]; then
+    echo "ISE agent host tools and image are already current; restart is not required."
+    exit 0
+  fi
+  if [[ "${FULL_RESYNC}" == "1" ]]; then
+    request_full_resync
+  fi
   if ! compose_restart; then
     echo "Error: the updated host tools could not restart the ISE agent; rolling back." >&2
-    restore_host_tools
+    if [[ "${HOST_TOOLS_CHANGED}" == "1" ]]; then
+      restore_host_tools
+    fi
+    if [[ -n "${previous_image_id}" ]] && [[ "${previous_image_id}" != "${current_image_id}" ]]; then
+      "${RUNTIME}" image tag "${previous_image_id}" "${IMAGE}"
+      echo "Restored the previous ISE agent image." >&2
+    fi
     compose_cmd up -d || true
     exit 1
   fi

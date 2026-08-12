@@ -36,9 +36,20 @@ SHA-256 checksums. The workflow creates a commit-specific
 
 `./start.sh --update` downloads and verifies the latest host tools, validates
 the scripts and rendered Compose configuration, saves the previous files under
-`.launcher/previous/`, then pulls the current agent image and restarts it. An
-ordinary start uses the cached controller and therefore does not require access
-to GitHub.
+`.launcher/previous/`, then pulls the current agent image. It restarts the agent
+only when the host tools or image changed. An ordinary start uses the cached
+controller and therefore does not require access to GitHub.
+
+Automatic updates are opt-in. `./start.sh --enable-auto-update` installs a
+daily cron entry at a stable, installation-specific time so agents do not all
+check for updates simultaneously. The scheduled job runs the same verified
+`--update` path and writes output to `.launcher/auto-update.log`. Disable it with
+`./start.sh --disable-auto-update`.
+
+Directory synchronization checkpoints are preserved across ordinary updates by
+the agent image. If recovery or a release migration requires a complete resend,
+run `./start.sh --update --full-resync`; this removes only the directory sync
+checkpoint before restarting and leaves credentials and certificates intact.
 
 Existing installations need one launcher migration before host tools can update
 themselves:
@@ -59,6 +70,9 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
 ./start.sh --update       # Update host tools and the agent image, then restart
+./start.sh --update --full-resync # Update and force a full directory resync
+./start.sh --enable-auto-update   # Schedule a daily update check
+./start.sh --disable-auto-update  # Remove the scheduled update check
 ./start.sh --stop         # Stop the agent
 ```
 
