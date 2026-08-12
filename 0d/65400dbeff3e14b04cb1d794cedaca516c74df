@@ -1,0 +1,33 @@
+tests/test-host-tools.sh
+  s_e02c4057ca52d7::t_a78a01aa45d0d9 106-110,115-118
+  s_e02c4057ca52d7::t_30887eafdf1639 111-114
+agentctl
+  s_e75cda1e86e915::t_51bf29c1ea042e 263,265,271
+  s_e02c4057ca52d7::t_a78a01aa45d0d9 270
+.gitignore
+  s_e75cda1e86e915::t_b3ad42020ed7c8 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "0d65400dbeff3e14b04cb1d794cedaca516c74df",
+  "prompts": {},
+  "sessions": {
+    "s_e02c4057ca52d7": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "5bff7de9-b56a-475a-b2af-1a21b5a8044f",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    },
+    "s_e75cda1e86e915": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "e24568af-60b0-4784-8b30-9e4915a1045d",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
