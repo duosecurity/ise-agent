@@ -103,6 +103,19 @@ ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
 
 grep -q '/app/bootstrap_iot.py --packaged --output-dir /bootstrap' "${COMMAND_LOG}"
 
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+ISE_AGENT_LOGS_SINCE_HOURS=2 \
+  "${PACKAGE_DIR}/start.sh" --collect-logs
+
+grep -q -- '-i --env-file .*/.env' "${COMMAND_LOG}"
+grep -q -- '-v .*/certs:/app/certs' "${COMMAND_LOG}"
+grep -q -- '-e ISE_AGENT_LOGS_SINCE_HOURS' "${COMMAND_LOG}"
+grep -q -- '--entrypoint python ghcr.io/duosecurity/ise-agent:latest -u /app/collect_logs.py' "${COMMAND_LOG}"
+! grep -q -- '-t .* /app/collect_logs.py' "${COMMAND_LOG}"
+! grep -q '/app/logs' "${COMMAND_LOG}"
+! grep -q 'ISE_AGENT_LOGS_SINCE_HOURS=2' "${COMMAND_LOG}"
+
 cp "${REPOSITORY_ROOT}/start.sh" "${ROLLBACK_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${ROLLBACK_DIR}/.launcher/agentctl"
 cp "${REPOSITORY_ROOT}/docker-compose.yml" "${ROLLBACK_DIR}/docker-compose.yml"

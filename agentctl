@@ -227,12 +227,9 @@ detect_docker_socket() {
 
 collect_logs() {
   local logs_dir collect_logs_file docker_socket archive_name archive_path
-  local tty_args=()
   local network_args=()
   local socket_args=()
   local collect_logs_args=()
-  local since_hours_args=()
-  local archive_args=()
 
   check_prerequisites
   logs_dir="$(pwd)/logs"
@@ -241,13 +238,9 @@ collect_logs() {
   mkdir -p "${logs_dir}"
   archive_name="ise-agent-logs-$(date -u +"%Y-%m-%dT%H-%M-%SZ").tar.gz"
   archive_path="${logs_dir}/${archive_name}"
-  : > "${archive_path}"
-  chmod 600 "${archive_path}"
-  archive_args=(-e "ISE_COLLECT_LOGS_ARCHIVE=/app/logs/${archive_name}")
 
   if ! "${RUNTIME}" image inspect "${IMAGE}" >/dev/null 2>&1; then
     echo "Error: ISE agent image is not available locally, Run ./start.sh to configure ISE Agent." >&2
-    rm -f "${archive_path}"
     exit 1
   fi
 
@@ -258,31 +251,24 @@ collect_logs() {
     echo "Warning: Docker socket not found; ISE agent container logs will be skipped." >&2
   fi
 
-  [[ -t 0 ]] && tty_args=(-t)
   [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
   if [[ -f "${collect_logs_file}" ]]; then
     collect_logs_args=(-v "${collect_logs_file}:/app/collect_logs.py:ro")
-  fi
-
-  if [[ -v ISE_AGENT_LOGS_SINCE_HOURS ]]; then
-    since_hours_args=(-e "ISE_AGENT_LOGS_SINCE_HOURS=${ISE_AGENT_LOGS_SINCE_HOURS}")
   fi
 
   echo "Starting log collection..."
   echo "Output archive: ${archive_path}"
   echo ""
 
-  if ! "${RUNTIME}" run --rm --pull=never \
+  if ! (umask 077 && "${RUNTIME}" run --rm --pull=never \
     "${network_args[@]}" \
-    -i "${tty_args[@]}" \
+    -i \
     --env-file "$(pwd)/.env" \
     -v "$(pwd)/certs:/app/certs" \
-    -v "${logs_dir}:/app/logs" \
     "${collect_logs_args[@]}" \
     "${socket_args[@]}" \
-    "${since_hours_args[@]}" \
-    "${archive_args[@]}" \
-    --entrypoint python "${IMAGE}" -u /app/collect_logs.py; then
+    -e ISE_AGENT_LOGS_SINCE_HOURS \
+    --entrypoint python "${IMAGE}" -u /app/collect_logs.py > "${archive_path}"); then
     rm -f "${archive_path}"
     echo "Error: log collection failed." >&2
     exit 1
