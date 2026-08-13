@@ -59,8 +59,21 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
 ./start.sh --update       # Update host tools and the agent image, then restart
+./start.sh --collect-logs # Collect ISE agent and selected ISE debug logs
 ./start.sh --stop         # Stop the agent
 ```
+
+### Troubleshooting log collection
+
+Use `./start.sh --collect-logs` when Cisco support asks for ISE agent
+diagnostics. The command creates one host-owned archive under
+`logs/ise-agent-logs-<timestamp>-<pid>.tar.gz` that can be attached to a support
+case or shared with the troubleshooting team.
+
+The archive includes the ISE agent container logs and the ISE debug logs commonly
+needed to investigate agent connectivity and pxGrid issues. If some logs are not
+available, the command records the error and still includes any logs it can
+collect.
 
 ## Files
 
