@@ -63,16 +63,17 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ./start.sh --stop         # Stop the agent
 ```
 
-### Faster log collection
+### Troubleshooting log collection
 
-`./start.sh --collect-logs` collects ISE agent container logs and selected ISE debug logs by
-default. The default ISE debug logs are `ise-psc.log`, `report.log`,
-`replication.log`, `sch.log`, and `pxgrid-server.log`, downloaded directly
-through ISE debug-log APIs without generating a full support bundle. The command
-writes one host-owned archive under `logs/ise-agent-logs-<timestamp>.tar.gz`.
+Use `./start.sh --collect-logs` when Cisco support asks for ISE agent
+diagnostics. The command creates one host-owned archive under
+`logs/ise-agent-logs-<timestamp>-<pid>.tar.gz` that can be attached to a support
+case or shared with the troubleshooting team.
 
-If ISE agent container logs or direct ISE debug logs are unavailable, the collector
-logs the error and continues with the other source.
+The archive includes the ISE agent container logs and the ISE debug logs commonly
+needed to investigate agent connectivity and pxGrid issues. If some logs are not
+available, the command records the error and still includes any logs it can
+collect.
 
 ## Files
 
