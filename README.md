@@ -71,18 +71,8 @@ default. The default ISE debug logs are `ise-psc.log`, `report.log`,
 through ISE debug-log APIs without generating a full support bundle. The command
 writes one host-owned archive under `logs/ise-agent-logs-<timestamp>.tar.gz`.
 
-To reduce the ISE agent container log time window:
-
-```sh
-ISE_AGENT_LOGS_SINCE_HOURS=2 ./start.sh --collect-logs
-```
-
-This window applies only to ISE agent container logs. The selected ISE debug log
-files are downloaded in full.
-
 If ISE agent container logs or direct ISE debug logs are unavailable, the collector
-logs the error and continues with the other source. Log collection overrides can
-also be added to `.env`.
+logs the error and continues with the other source.
 
 ## Files
 
