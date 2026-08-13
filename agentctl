@@ -183,13 +183,12 @@ check_prerequisites() {
   done
 }
 
-collect_logs() {
-  local logs_dir collect_logs_file archive_name archive_path runtime_socket
+run_log_collector() {
+  local logs_dir archive_name archive_path agent_log_path
   local cmd
 
   check_prerequisites
   logs_dir="$(pwd)/logs"
-  collect_logs_file="$(pwd)/collect_logs.py"
 
   mkdir -p "${logs_dir}"
   archive_name="ise-agent-logs-$(date -u +"%Y-%m-%dT%H-%M-%SZ")-$$.tar.gz"
@@ -198,6 +197,17 @@ collect_logs() {
   if ! "${RUNTIME}" image inspect "${IMAGE}" >/dev/null 2>&1; then
     echo "Error: ISE agent image is not available locally, Run ./start.sh to configure ISE Agent." >&2
     exit 1
+  fi
+
+  agent_log_path=$(umask 077 && mktemp "${SCRIPT_DIR}/.ise-agent-container-log.XXXXXX")
+  if ! "${RUNTIME}" logs --since 24h "${CONTAINER_NAME}" > "${agent_log_path}" 2>&1; then
+    echo "Warning: could not collect ISE agent container logs; continuing with available ISE logs." >&2
+    rm -f "${agent_log_path}"
+    agent_log_path=""
+  elif [[ ! -s "${agent_log_path}" ]]; then
+    echo "Warning: ISE agent container logs were empty; continuing with available ISE logs." >&2
+    rm -f "${agent_log_path}"
+    agent_log_path=""
   fi
 
   cmd=("${RUNTIME}" run --rm --pull=never)
@@ -212,30 +222,24 @@ collect_logs() {
     -v "$(pwd)/certs:/app/certs"
   )
 
-  if [[ -f "${collect_logs_file}" ]]; then
-    cmd+=(-v "${collect_logs_file}:/app/collect_logs.py:ro")
+  if [[ -n "${agent_log_path}" ]]; then
+    cmd+=(-v "${agent_log_path}:/input/agent.log:ro")
   fi
 
-  if [[ "${RUNTIME}" == "docker" ]]; then
-    runtime_socket="/var/run/docker.sock"
-  elif [[ "${RUNTIME}" == "podman" ]]; then
-    runtime_socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
-  fi
-  if [[ -n "${runtime_socket:-}" ]] && [[ -S "${runtime_socket}" ]]; then
-    cmd+=(-v "${runtime_socket}:/var/run/docker.sock")
-  fi
-
-  cmd+=(--entrypoint python "${IMAGE}" -u /app/collect_logs.py)
+  cmd+=("${IMAGE}" collect-logs)
 
   echo "Starting log collection..."
   echo "Output archive: ${archive_path}"
   echo ""
 
   if ! (umask 077 && "${cmd[@]}" > "${archive_path}"); then
+    rm -f "${agent_log_path}"
     rm -f "${archive_path}"
     echo "Error: log collection failed." >&2
     exit 1
   fi
+
+  rm -f "${agent_log_path}"
 
   echo ""
   echo "Log collection complete. Archive: ${archive_path}"
@@ -254,15 +258,23 @@ pull_image_once() {
 run_in_container() {
   pull_image_once
   local script="$1"
+  local cmd
   shift
-  local tty_args=()
-  local network_args=()
-  [[ -t 0 ]] && tty_args=(-t)
-  [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]] && network_args=(--network host)
-  "${RUNTIME}" run --rm --pull=never "${network_args[@]}" -i "${tty_args[@]}" \
-    --env-file "$(pwd)/.env" \
-    -v "$(pwd)/certs:/app/certs" \
-    --entrypoint python "${IMAGE}" -u "/app/${script}" "$@"
+
+  cmd=("${RUNTIME}" run --rm --pull=never)
+  if [[ "${ISE_AGENT_NETWORK_MODE}" == "host" ]]; then
+    cmd+=(--network host)
+  fi
+  cmd+=(-i)
+  if [[ -t 0 ]]; then
+    cmd+=(-t)
+  fi
+  cmd+=(
+    --env-file "$(pwd)/.env"
+    -v "$(pwd)/certs:/app/certs"
+    --entrypoint python "${IMAGE}" -u "/app/${script}"
+  )
+  "${cmd[@]}" "$@"
 }
 
 redeem_packaged_bootstrap() {
@@ -335,7 +347,7 @@ if [[ "${ACTION}" == "update" ]]; then
 fi
 
 if [[ "${ACTION}" == "collect-logs" ]]; then
-  collect_logs
+  run_log_collector
   exit 0
 fi
 
