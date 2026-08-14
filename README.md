@@ -59,9 +59,21 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
 ./start.sh --update       # Update host tools and the agent image, then restart
+./start.sh --rollback     # Roll back to the retained previous application bundle
+./start.sh --enable-auto-updates  # Enable signed application-bundle update checks
+./start.sh --disable-auto-updates # Disable checks without changing the active version
 ./start.sh --collect-logs # Collect ISE agent and selected ISE debug logs
 ./start.sh --stop         # Stop the agent
+./start.sh --help         # Show all available commands
 ```
+
+Rollback stops the service, validates that the installed image supports manual
+bundle rollback, activates the retained previous bundle, and restarts the
+service. It rolls back application code within the current image; reverting the
+container runtime or image-level dependencies requires selecting an older image.
+The enable and disable commands use the same image-owned control interface and
+persist the setting in the existing certificates volume; host tooling does not
+parse or rewrite customer environment files.
 
 ### Troubleshooting log collection
 
