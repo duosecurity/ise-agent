@@ -13,8 +13,10 @@ RELEASE_DIR="${TEST_ROOT}/release"
 INSTALL_DIR="${TEST_ROOT}/install"
 BOOTSTRAP_DIR="${TEST_ROOT}/bootstrap"
 PACKAGE_DIR="${TEST_ROOT}/package"
+PODMAN_PACKAGE_DIR="${TEST_ROOT}/podman-package"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
 BIN_DIR="${TEST_ROOT}/bin"
+PODMAN_BIN_DIR="${TEST_ROOT}/podman-bin"
 COMMAND_LOG="${TEST_ROOT}/commands.log"
 mkdir -p \
   "${RELEASE_DIR}" \
@@ -22,8 +24,11 @@ mkdir -p \
   "${BOOTSTRAP_DIR}" \
   "${PACKAGE_DIR}/.launcher" \
   "${PACKAGE_DIR}/certs" \
+  "${PODMAN_PACKAGE_DIR}/.launcher" \
+  "${PODMAN_PACKAGE_DIR}/certs" \
   "${ROLLBACK_DIR}/.launcher" \
-  "${BIN_DIR}"
+  "${BIN_DIR}" \
+  "${PODMAN_BIN_DIR}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${RELEASE_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${RELEASE_DIR}/agentctl"
@@ -44,6 +49,14 @@ printf '%s\n' "$*" >> "${ISE_AGENT_TEST_COMMAND_LOG}"
 if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "version" ]]; then
   exit 0
 fi
+if [[ -n "${ISE_AGENT_TEST_ROLLBACK_CAPABILITY_UNAVAILABLE:-}" ]] \
+  && [[ "$*" == "compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent capabilities" ]]; then
+  exit 1
+fi
+if [[ -n "${ISE_AGENT_TEST_FAIL_ROLLBACK:-}" ]] \
+  && [[ "$*" == "compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback" ]]; then
+  exit 1
+fi
 if [[ -n "${ISE_AGENT_TEST_FAIL_UP_ONCE:-}" ]] \
   && [[ "$*" == "compose up -d" ]] \
   && [[ ! -f "${ISE_AGENT_TEST_FAIL_UP_ONCE}" ]]; then
@@ -53,6 +66,13 @@ fi
 exit 0
 EOF
 chmod +x "${BIN_DIR}/docker"
+cp "${BIN_DIR}/docker" "${PODMAN_BIN_DIR}/podman"
+chmod +x "${PODMAN_BIN_DIR}/podman"
+cat > "${PODMAN_BIN_DIR}/docker" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "${PODMAN_BIN_DIR}/docker"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${INSTALL_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
@@ -97,11 +117,93 @@ EOF
 printf '%s\n' 'https://api.example.test/ise-agent/bootstrap' > "${PACKAGE_DIR}/certs/certificate.pem.crt"
 printf '%s\n' 'iseb1.token.secret' > "${PACKAGE_DIR}/certs/private.pem.key"
 touch "${PACKAGE_DIR}/certs/.credentials.enc" "${PACKAGE_DIR}/certs/.pxgrid.enc"
+cat > "${PACKAGE_DIR}/docker-compose.override.yml" <<'EOF'
+services:
+  earlier-sidecar:
+    image: example.test/sidecar:latest
+EOF
 PATH="${BIN_DIR}:${PATH}" \
 ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
   "${PACKAGE_DIR}/start.sh" --no-pull
 
 grep -q '/app/bootstrap_iot.py --packaged --output-dir /bootstrap' "${COMMAND_LOG}"
+
+HELP_OUTPUT=$(PATH="${BIN_DIR}:${PATH}" "${PACKAGE_DIR}/start.sh" --help)
+for option in \
+  --reconfigure \
+  --update \
+  --rollback \
+  --enable-auto-updates \
+  --disable-auto-updates \
+  --collect-logs \
+  --stop \
+  --enable-pxgrid \
+  --disable-pxgrid \
+  --no-pull \
+  --help; do
+  grep -q -- "${option}" <<< "${HELP_OUTPUT}"
+done
+
+: > "${COMMAND_LOG}"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PACKAGE_DIR}/start.sh" --disable-auto-updates
+grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent capabilities' "${COMMAND_LOG}"
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent updates disable' "${COMMAND_LOG}"
+grep -q 'compose up -d ise-agent' "${COMMAND_LOG}"
+! grep -q 'earlier-sidecar' "${COMMAND_LOG}"
+! grep -q '^UPDATE_ENABLED=' "${PACKAGE_DIR}/.env"
+
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PACKAGE_DIR}/start.sh" --enable-auto-updates
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent updates enable' "${COMMAND_LOG}"
+! grep -q '^UPDATE_ENABLED=' "${PACKAGE_DIR}/.env"
+
+: > "${COMMAND_LOG}"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PACKAGE_DIR}/start.sh" --rollback
+grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback' "${COMMAND_LOG}"
+grep -q 'compose up -d ise-agent' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_TEST_ROLLBACK_CAPABILITY_UNAVAILABLE=1 \
+    "${PACKAGE_DIR}/start.sh" --rollback; then
+  echo "Expected an unsupported image to reject rollback." >&2
+  exit 1
+fi
+! grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_TEST_FAIL_ROLLBACK=1 \
+    "${PACKAGE_DIR}/start.sh" --rollback; then
+  echo "Expected a failed image rollback command to return a failure." >&2
+  exit 1
+fi
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback' "${COMMAND_LOG}"
+grep -q 'compose up -d ise-agent' "${COMMAND_LOG}"
+
+cp "${PACKAGE_DIR}/start.sh" "${PODMAN_PACKAGE_DIR}/start.sh"
+cp "${PACKAGE_DIR}/.launcher/agentctl" "${PODMAN_PACKAGE_DIR}/.launcher/agentctl"
+cp "${PACKAGE_DIR}/docker-compose.yml" "${PODMAN_PACKAGE_DIR}/docker-compose.yml"
+cp "${PACKAGE_DIR}/docker-compose.override.yml" "${PODMAN_PACKAGE_DIR}/docker-compose.override.yml"
+cp "${PACKAGE_DIR}/.env" "${PODMAN_PACKAGE_DIR}/.env"
+cp "${PACKAGE_DIR}/certs/"* "${PODMAN_PACKAGE_DIR}/certs/"
+cp "${PACKAGE_DIR}/certs/.credentials.enc" "${PODMAN_PACKAGE_DIR}/certs/.credentials.enc"
+chmod +x "${PODMAN_PACKAGE_DIR}/start.sh" "${PODMAN_PACKAGE_DIR}/.launcher/agentctl"
+: > "${COMMAND_LOG}"
+PATH="${PODMAN_BIN_DIR}:/usr/bin:/bin" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PODMAN_PACKAGE_DIR}/start.sh" --rollback
+grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
+grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${ROLLBACK_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${ROLLBACK_DIR}/.launcher/agentctl"
