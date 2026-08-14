@@ -325,22 +325,9 @@ compose_restart() {
 }
 
 require_bundle_control_support() {
-  local capability configured_image
-  configured_image=$(compose_cmd config | awk '$1 == "image:" { print $2; exit }')
-  if [[ -z "${configured_image}" ]]; then
-    echo "Error: could not determine the configured ISE agent image." >&2
-    return 1
-  fi
-  if ! "${RUNTIME}" image inspect "${configured_image}" >/dev/null 2>&1; then
-    echo "Error: the ISE agent image is unavailable locally. Run ./start.sh --update first." >&2
-    return 1
-  fi
-  capability=$(
-    "${RUNTIME}" image inspect \
-      --format '{{ index .Config.Labels "com.cisco.ise-agent.bundle-control" }}' \
-      "${configured_image}" 2>/dev/null || true
-  )
-  if [[ "${capability}" != "1" ]]; then
+  if ! compose_cmd run --rm --no-deps \
+    --entrypoint /usr/local/bin/ise-agent-control \
+    ise-agent capabilities >/dev/null 2>&1; then
     echo "Error: the installed ISE agent image does not support bundle controls. Run ./start.sh --update first." >&2
     return 1
   fi
@@ -352,7 +339,9 @@ run_bundle_control() {
   require_bundle_control_support
   echo "Stopping the ISE agent to ${description}..."
   compose_cmd stop ise-agent
-  if ! compose_cmd run --rm --no-deps ise-agent "$@"; then
+  if ! compose_cmd run --rm --no-deps \
+    --entrypoint /usr/local/bin/ise-agent-control \
+    ise-agent "$@"; then
     echo "Error: could not ${description}; restarting the current ISE agent version." >&2
     compose_cmd up -d ise-agent || true
     return 1

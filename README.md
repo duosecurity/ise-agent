@@ -73,7 +73,7 @@ service. It rolls back application code within the current image; reverting the
 container runtime or image-level dependencies requires selecting an older image.
 The enable and disable commands use the same image-owned control interface and
 persist the setting in the existing certificates volume; host tooling does not
-parse or rewrite customer environment files.
+parse Compose image ordering or rewrite customer environment files.
 
 ### Troubleshooting log collection
 
