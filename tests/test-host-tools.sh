@@ -76,6 +76,11 @@ EOF
 chmod +x "${BIN_DIR}/docker"
 cp "${BIN_DIR}/docker" "${PODMAN_BIN_DIR}/podman"
 chmod +x "${PODMAN_BIN_DIR}/podman"
+cat > "${PODMAN_BIN_DIR}/docker" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "${PODMAN_BIN_DIR}/docker"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${INSTALL_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
