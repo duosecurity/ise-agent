@@ -87,6 +87,19 @@ needed to investigate agent connectivity and pxGrid issues. If some logs are not
 available, the command records the error and still includes any logs it can
 collect.
 
+### pxGrid account creation returns HTTP 503
+
+The ISE agent registers a password-based pxGrid client on first start. If the
+agent logs report that pxGrid `AccountCreate` returned HTTP 503, verify these
+settings in ISE:
+
+1. Under **Administration > pxGrid Services > Settings**, enable
+   **Allow password based account creation**.
+2. Under **Administration > System > Deployment**, verify that the pxGrid
+   persona is enabled on at least one node.
+3. Restart the ISE agent, then approve the pending `cii-agent` client under
+   **Administration > pxGrid Services > Client Management > Clients**.
+
 ## Files
 
 | File | Description |

@@ -14,9 +14,12 @@ INSTALL_DIR="${TEST_ROOT}/install"
 BOOTSTRAP_DIR="${TEST_ROOT}/bootstrap"
 PACKAGE_DIR="${TEST_ROOT}/package"
 PODMAN_PACKAGE_DIR="${TEST_ROOT}/podman-package"
+ROOTLESS_INSTALL_DIR="${TEST_ROOT}/rootless-install"
+ROOTFUL_INSTALL_DIR="${TEST_ROOT}/rootful-install"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
 BIN_DIR="${TEST_ROOT}/bin"
 PODMAN_BIN_DIR="${TEST_ROOT}/podman-bin"
+PODMAN_INSTALL_BIN_DIR="${TEST_ROOT}/podman-install-bin"
 COMMAND_LOG="${TEST_ROOT}/commands.log"
 mkdir -p \
   "${RELEASE_DIR}" \
@@ -26,9 +29,12 @@ mkdir -p \
   "${PACKAGE_DIR}/certs" \
   "${PODMAN_PACKAGE_DIR}/.launcher" \
   "${PODMAN_PACKAGE_DIR}/certs" \
+  "${ROOTLESS_INSTALL_DIR}" \
+  "${ROOTFUL_INSTALL_DIR}" \
   "${ROLLBACK_DIR}/.launcher" \
   "${BIN_DIR}" \
-  "${PODMAN_BIN_DIR}"
+  "${PODMAN_BIN_DIR}" \
+  "${PODMAN_INSTALL_BIN_DIR}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${RELEASE_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${RELEASE_DIR}/agentctl"
@@ -49,6 +55,24 @@ printf '%s\n' "$*" >> "${ISE_AGENT_TEST_COMMAND_LOG}"
 if [[ "${1:-}" == "compose" ]] && [[ "${2:-}" == "version" ]]; then
   exit 0
 fi
+if [[ "${1:-}" == "info" ]]; then
+  if [[ -n "${ISE_AGENT_TEST_ROOTLESS:-}" ]]; then
+    if [[ "$*" == *Host.Security.Rootless* ]]; then
+      echo "true"
+    else
+      echo '["name=rootless"]'
+    fi
+  elif [[ "$*" == *Host.Security.Rootless* ]]; then
+    echo "false"
+  else
+    echo '[]'
+  fi
+  exit 0
+fi
+if [[ -n "${ISE_AGENT_TEST_FAIL_BOOTSTRAP:-}" ]] \
+  && [[ "$*" == *'/app/bootstrap_iot.py --bundle --output-dir /bootstrap'* ]]; then
+  exit 42
+fi
 if [[ -n "${ISE_AGENT_TEST_ROLLBACK_CAPABILITY_UNAVAILABLE:-}" ]] \
   && [[ "$*" == "compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent capabilities" ]]; then
   exit 1
@@ -68,11 +92,51 @@ EOF
 chmod +x "${BIN_DIR}/docker"
 cp "${BIN_DIR}/docker" "${PODMAN_BIN_DIR}/podman"
 chmod +x "${PODMAN_BIN_DIR}/podman"
+cp "${BIN_DIR}/docker" "${PODMAN_INSTALL_BIN_DIR}/podman"
+chmod +x "${PODMAN_INSTALL_BIN_DIR}/podman"
+for command_name in bash curl mktemp rm awk sed mkdir mv chmod id; do
+  ln -s "$(command -v "${command_name}")" "${PODMAN_INSTALL_BIN_DIR}/${command_name}"
+done
+if command -v sha256sum &>/dev/null; then
+  ln -s "$(command -v sha256sum)" "${PODMAN_INSTALL_BIN_DIR}/sha256sum"
+else
+  ln -s "$(command -v shasum)" "${PODMAN_INSTALL_BIN_DIR}/shasum"
+fi
 cat > "${PODMAN_BIN_DIR}/docker" <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
 chmod +x "${PODMAN_BIN_DIR}/docker"
+
+: > "${COMMAND_LOG}"
+if (
+  cd "${ROOTLESS_INSTALL_DIR}"
+  PATH="${PODMAN_INSTALL_BIN_DIR}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_TEST_ROOTLESS=1 \
+  ISE_AGENT_TEST_FAIL_BOOTSTRAP=1 \
+  ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
+    "${REPOSITORY_ROOT}/install.sh" test-bundle
+); then
+  echo "Expected the mocked rootless Podman bootstrap to fail." >&2
+  exit 1
+fi
+grep -q '/app/bootstrap_iot.py --bundle --output-dir /bootstrap' "${COMMAND_LOG}"
+grep -Eq 'run --rm --pull=never -i --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+if (
+  cd "${ROOTFUL_INSTALL_DIR}"
+  PATH="${PODMAN_INSTALL_BIN_DIR}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_TEST_FAIL_BOOTSTRAP=1 \
+  ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
+    "${REPOSITORY_ROOT}/install.sh" test-bundle
+); then
+  echo "Expected the mocked rootful Podman bootstrap to fail." >&2
+  exit 1
+fi
+grep -Eq 'run --rm --pull=never -i --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${INSTALL_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
@@ -127,6 +191,14 @@ ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
   "${PACKAGE_DIR}/start.sh" --no-pull
 
 grep -q '/app/bootstrap_iot.py --packaged --output-dir /bootstrap' "${COMMAND_LOG}"
+grep -Eq 'run --rm --pull=never --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+ISE_AGENT_TEST_ROOTLESS=1 \
+  "${PACKAGE_DIR}/start.sh" --no-pull
+grep -Eq 'run --rm --pull=never --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
 
 HELP_OUTPUT=$(PATH="${BIN_DIR}:${PATH}" "${PACKAGE_DIR}/start.sh" --help)
 for option in \
@@ -201,9 +273,11 @@ chmod +x "${PODMAN_PACKAGE_DIR}/start.sh" "${PODMAN_PACKAGE_DIR}/.launcher/agent
 : > "${COMMAND_LOG}"
 PATH="${PODMAN_BIN_DIR}:/usr/bin:/bin" \
 ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+ISE_AGENT_TEST_ROOTLESS=1 \
   "${PODMAN_PACKAGE_DIR}/start.sh" --rollback
 grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
 grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback' "${COMMAND_LOG}"
+! grep -Eq 'run --rm --pull=never .*bootstrap_iot.py --packaged' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${ROLLBACK_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${ROLLBACK_DIR}/.launcher/agentctl"

@@ -301,15 +301,45 @@ run_in_container() {
 }
 
 redeem_packaged_bootstrap() {
-  local host_user
+  local runtime_info
+  local run_as_host_user=1
+  local -a cmd
   pull_image_once
-  host_user="$(id -u):$(id -g)"
-  "${RUNTIME}" run --rm --pull=never \
-    --user "${host_user}" \
-    -v "$(pwd):/bootstrap" \
-    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
-    --packaged \
+
+  # Rootless runtimes map container root to the caller. Forcing the caller's
+  # numeric UID instead maps to a subordinate UID that cannot write this mount.
+  if [[ "${RUNTIME}" == "podman" ]]; then
+    if ! runtime_info=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null); then
+      echo "Error: unable to determine whether Podman is running rootless." >&2
+      return 1
+    fi
+    if [[ "${runtime_info}" == "true" ]]; then
+      run_as_host_user=0
+    fi
+  elif [[ "${RUNTIME}" == "docker" ]]; then
+    if ! runtime_info=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null); then
+      echo "Error: unable to determine whether Docker is running rootless." >&2
+      return 1
+    fi
+    if [[ "${runtime_info}" == *rootless* ]]; then
+      run_as_host_user=0
+    fi
+  fi
+
+  cmd=("${RUNTIME}" run --rm --pull=never)
+  if [[ "${run_as_host_user}" == "1" ]]; then
+    cmd+=(--user "$(id -u):$(id -g)")
+  else
+    # Do not depend on the image's configured USER across independent releases.
+    cmd+=(--user 0:0)
+  fi
+  cmd+=(
+    -v "$(pwd):/bootstrap"
+    --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py
+    --packaged
     --output-dir /bootstrap
+  )
+  "${cmd[@]}"
 }
 
 compose_cmd() {

@@ -27,7 +27,33 @@ if [[ -z "${RUNTIME}" ]]; then
   echo "Error: Docker or Podman is required to install the ISE agent." >&2
   exit 1
 fi
-HOST_USER="$(id -u):$(id -g)"
+
+set_container_user_mode() {
+  local runtime_info
+  RUN_AS_HOST_USER=1
+
+  # Rootless runtimes map container root to the caller. Forcing the caller's
+  # numeric UID instead maps to a subordinate UID that cannot write this mount.
+  if [[ "${RUNTIME}" == "podman" ]]; then
+    if ! runtime_info=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null); then
+      echo "Error: unable to determine whether Podman is running rootless." >&2
+      exit 1
+    fi
+    if [[ "${runtime_info}" == "true" ]]; then
+      RUN_AS_HOST_USER=0
+      return
+    fi
+  elif [[ "${RUNTIME}" == "docker" ]]; then
+    if ! runtime_info=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null); then
+      echo "Error: unable to determine whether Docker is running rootless." >&2
+      exit 1
+    fi
+    if [[ "${runtime_info}" == *rootless* ]]; then
+      RUN_AS_HOST_USER=0
+      return
+    fi
+  fi
+}
 
 INSTALL_DIR="$(pwd -P)"
 echo "Installing ISE agent in ${INSTALL_DIR}..."
@@ -85,12 +111,21 @@ echo "Pulling the ISE agent image..."
 "${RUNTIME}" pull "${IMAGE}"
 
 echo "Installing the ISE agent credential bundle inside the container..."
-printf '%s' "${BUNDLE}" | "${RUNTIME}" run --rm --pull=never -i \
-  --user "${HOST_USER}" \
-  -v "${INSTALL_DIR}:/bootstrap" \
-  --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py \
-  --bundle \
+set_container_user_mode
+bootstrap_cmd=("${RUNTIME}" run --rm --pull=never -i)
+if [[ "${RUN_AS_HOST_USER}" == "1" ]]; then
+  bootstrap_cmd+=(--user "$(id -u):$(id -g)")
+else
+  # Do not depend on the image's configured USER across independent releases.
+  bootstrap_cmd+=(--user 0:0)
+fi
+bootstrap_cmd+=(
+  -v "${INSTALL_DIR}:/bootstrap"
+  --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py
+  --bundle
   --output-dir /bootstrap
+)
+printf '%s' "${BUNDLE}" | "${bootstrap_cmd[@]}"
 BUNDLE=""
 
 AGENT_ID=$(sed -n 's/^AGENT_ID=//p' "${INSTALL_DIR}/.env")
