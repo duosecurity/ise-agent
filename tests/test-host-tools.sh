@@ -122,7 +122,7 @@ if (
   exit 1
 fi
 grep -q '/app/bootstrap_iot.py --bundle --output-dir /bootstrap' "${COMMAND_LOG}"
-! grep -Eq 'run --rm --pull=never -i --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+grep -Eq 'run --rm --pull=never -i --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
 
 : > "${COMMAND_LOG}"
 if (
@@ -198,7 +198,7 @@ PATH="${BIN_DIR}:${PATH}" \
 ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
 ISE_AGENT_TEST_ROOTLESS=1 \
   "${PACKAGE_DIR}/start.sh" --no-pull
-! grep -Eq 'run --rm --pull=never --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+grep -Eq 'run --rm --pull=never --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
 
 HELP_OUTPUT=$(PATH="${BIN_DIR}:${PATH}" "${PACKAGE_DIR}/start.sh" --help)
 for option in \
@@ -277,7 +277,7 @@ ISE_AGENT_TEST_ROOTLESS=1 \
   "${PODMAN_PACKAGE_DIR}/start.sh" --rollback
 grep -q 'compose stop ise-agent' "${COMMAND_LOG}"
 grep -q 'compose run --rm --no-deps --entrypoint /usr/local/bin/ise-agent-control ise-agent rollback' "${COMMAND_LOG}"
-! grep -Eq 'run --rm --pull=never --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+grep -Eq 'run --rm --pull=never --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${ROLLBACK_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${ROLLBACK_DIR}/.launcher/agentctl"

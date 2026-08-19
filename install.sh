@@ -115,6 +115,9 @@ set_container_user_mode
 bootstrap_cmd=("${RUNTIME}" run --rm --pull=never -i)
 if [[ "${RUN_AS_HOST_USER}" == "1" ]]; then
   bootstrap_cmd+=(--user "$(id -u):$(id -g)")
+else
+  # Do not depend on the image's configured USER across independent releases.
+  bootstrap_cmd+=(--user 0:0)
 fi
 bootstrap_cmd+=(
   -v "${INSTALL_DIR}:/bootstrap"

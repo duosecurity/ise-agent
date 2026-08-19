@@ -329,6 +329,9 @@ redeem_packaged_bootstrap() {
   cmd=("${RUNTIME}" run --rm --pull=never)
   if [[ "${run_as_host_user}" == "1" ]]; then
     cmd+=(--user "$(id -u):$(id -g)")
+  else
+    # Do not depend on the image's configured USER across independent releases.
+    cmd+=(--user 0:0)
   fi
   cmd+=(
     -v "$(pwd):/bootstrap"
