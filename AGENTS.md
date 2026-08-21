@@ -9,6 +9,11 @@ owns the application and collection behavior inside the image.
 
 - Keep the host layer thin. It may adapt the host environment to the container
   runtime, but it should not duplicate application logic from the image.
+- For onboarding, documentation, and setup-only improvements, target new
+  installations by default. Do not make existing customers perform a manual
+  host-tool or agent update unless the user explicitly requests it or the
+  update is strictly necessary for correctness or security. If a manual update
+  is unavoidable, explain the necessity before implementing it.
 - Put parsing, business rules, collection behavior, artifact construction, and
   other application-specific work in the image behind a stable public
   interface.
