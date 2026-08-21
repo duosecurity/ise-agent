@@ -39,13 +39,13 @@ mkdir -p \
 cp "${REPOSITORY_ROOT}/start.sh" "${RELEASE_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${RELEASE_DIR}/agentctl"
 cp "${REPOSITORY_ROOT}/docker-compose.yml" "${RELEASE_DIR}/docker-compose.yml"
-cp "${REPOSITORY_ROOT}/README.md" "${RELEASE_DIR}/README.md"
+cp "${REPOSITORY_ROOT}/QUICKSTART.md" "${RELEASE_DIR}/QUICKSTART.md"
 (
   cd "${RELEASE_DIR}"
   if command -v sha256sum &>/dev/null; then
-    sha256sum README.md start.sh agentctl docker-compose.yml > SHA256SUMS
+    sha256sum QUICKSTART.md start.sh agentctl docker-compose.yml > SHA256SUMS
   else
-    shasum -a 256 README.md start.sh agentctl docker-compose.yml > SHA256SUMS
+    shasum -a 256 QUICKSTART.md start.sh agentctl docker-compose.yml > SHA256SUMS
   fi
 )
 
