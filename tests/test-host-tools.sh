@@ -39,13 +39,13 @@ mkdir -p \
 cp "${REPOSITORY_ROOT}/start.sh" "${RELEASE_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${RELEASE_DIR}/agentctl"
 cp "${REPOSITORY_ROOT}/docker-compose.yml" "${RELEASE_DIR}/docker-compose.yml"
-cp "${REPOSITORY_ROOT}/README.txt" "${RELEASE_DIR}/README.txt"
+cp "${REPOSITORY_ROOT}/README.md" "${RELEASE_DIR}/README.md"
 (
   cd "${RELEASE_DIR}"
   if command -v sha256sum &>/dev/null; then
-    sha256sum README.txt start.sh agentctl docker-compose.yml > SHA256SUMS
+    sha256sum README.md start.sh agentctl docker-compose.yml > SHA256SUMS
   else
-    shasum -a 256 README.txt start.sh agentctl docker-compose.yml > SHA256SUMS
+    shasum -a 256 README.md start.sh agentctl docker-compose.yml > SHA256SUMS
   fi
 )
 
@@ -153,7 +153,6 @@ ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
   "${INSTALL_DIR}/start.sh" --update
 
 test -x "${INSTALL_DIR}/.launcher/agentctl"
-cmp "${REPOSITORY_ROOT}/README.txt" "${INSTALL_DIR}/README.txt"
 test -f "${INSTALL_DIR}/.launcher/previous/start.sh"
 test -f "${INSTALL_DIR}/.launcher/previous/agentctl"
 test -f "${INSTALL_DIR}/.launcher/previous/docker-compose.yml"

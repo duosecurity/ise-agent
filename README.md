@@ -21,16 +21,26 @@ This will:
 3. Download the customer quick-start guide, stable `start.sh` bootstrap, versioned `agentctl`, and `docker-compose.yml`
 4. Start the agent
 
+Complete setup within 24 hours of generating the agent package or install
+command. The included one-time setup credential expires after 24 hours and
+cannot be reused. If it expires, reset the agent credentials in the ISE
+integration and use the newly generated package or command.
+
 The generated `.env` only includes connection settings. The agent image applies
 its built-in polling and telemetry cadence defaults unless you add optional
 interval overrides to `.env`.
 
-Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
+Alternatively, download the agent package ZIP from the UI and run `./start.sh`
+manually. During setup, choose whether to create a new pxGrid client or use an
+existing registered and approved client. If the agent creates a client, approve
+it in ISE under **Administration > pxGrid Services > Client Management >
+Clients**.
 
 ## Releasing
 
 Every merge to `main` publishes a GitHub Release containing `install.sh`, the
-customer `README.txt`, stable `start.sh` bootstrap, versioned `agentctl`, `docker-compose.yml`, and
+customer `README.md`, stable `start.sh` bootstrap, versioned `agentctl`,
+`docker-compose.yml`, and
 SHA-256 checksums. The workflow creates a commit-specific
 `release-<commit>` tag automatically, so no manual tag is required.
 
@@ -105,7 +115,7 @@ settings in ISE:
 | File | Description |
 |------|-------------|
 | `install.sh` | Bootstrap script for one-line installation |
-| `README.txt` | Customer quick-start guide included in curl and ZIP installations |
+| `README.md` | Customer setup guide included in curl and ZIP installations |
 | `start.sh` | Stable bootstrap for the cached host controller |
 | `agentctl` | Versioned Docker/Podman and Compose lifecycle controller |
 | `docker-compose.yml` | Generated container definition (populated by install or update) |

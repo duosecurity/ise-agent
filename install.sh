@@ -66,7 +66,7 @@ trap cleanup EXIT
 
 for target in \
   "${INSTALL_DIR}/.env" \
-  "${INSTALL_DIR}/README.txt" \
+  "${INSTALL_DIR}/README.md" \
   "${INSTALL_DIR}/docker-compose.yml" \
   "${INSTALL_DIR}/start.sh" \
   "${INSTALL_DIR}/.launcher/agentctl" \
@@ -80,7 +80,7 @@ done
 
 echo "Downloading the current ISE agent launcher..."
 curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${TEMP_DIR}/SHA256SUMS"
-curl -fsSL "${RELEASE_ASSET_BASE}/README.txt" -o "${TEMP_DIR}/README.txt"
+curl -fsSL "${RELEASE_ASSET_BASE}/README.md" -o "${TEMP_DIR}/README.md"
 curl -fsSL "${RELEASE_ASSET_BASE}/docker-compose.yml" -o "${TEMP_DIR}/docker-compose.yml.template"
 curl -fsSL "${RELEASE_ASSET_BASE}/start.sh" -o "${TEMP_DIR}/start.sh"
 curl -fsSL "${RELEASE_ASSET_BASE}/agentctl" -o "${TEMP_DIR}/agentctl"
@@ -104,7 +104,7 @@ verify_asset() {
   fi
 }
 
-verify_asset README.txt "${TEMP_DIR}/README.txt"
+verify_asset README.md "${TEMP_DIR}/README.md"
 verify_asset start.sh "${TEMP_DIR}/start.sh"
 verify_asset agentctl "${TEMP_DIR}/agentctl"
 verify_asset docker-compose.yml "${TEMP_DIR}/docker-compose.yml.template"
@@ -144,7 +144,7 @@ CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
 sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g" \
   "${TEMP_DIR}/docker-compose.yml.template" > "${TEMP_DIR}/docker-compose.yml"
 mkdir -p "${INSTALL_DIR}/.launcher"
-mv "${TEMP_DIR}/README.txt" "${INSTALL_DIR}/README.txt"
+mv "${TEMP_DIR}/README.md" "${INSTALL_DIR}/README.md"
 mv "${TEMP_DIR}/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
 mv "${TEMP_DIR}/start.sh" "${INSTALL_DIR}/start.sh"
 mv "${TEMP_DIR}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
