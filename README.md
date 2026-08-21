@@ -18,7 +18,7 @@ curl -fsSL "https://github.com/duosecurity/ise-agent/releases/latest/download/in
 This will:
 1. Decode your IoT credentials from the bundle
 2. Write `.env` and `certs/` to `~/ise-agent/`
-3. Download the stable `start.sh` bootstrap, versioned `agentctl`, and `docker-compose.yml`
+3. Download the customer quick-start guide, stable `start.sh` bootstrap, versioned `agentctl`, and `docker-compose.yml`
 4. Start the agent
 
 The generated `.env` only includes connection settings. The agent image applies
@@ -30,7 +30,8 @@ Alternatively, download the agent package ZIP from the UI and run `./start.sh` m
 ## Releasing
 
 Every merge to `main` publishes a GitHub Release containing `install.sh`, the
-stable `start.sh` bootstrap, versioned `agentctl`, `docker-compose.yml`, and
+customer `QUICKSTART.md`, stable `start.sh` bootstrap, versioned `agentctl`,
+`docker-compose.yml`, and
 SHA-256 checksums. The workflow creates a commit-specific
 `release-<commit>` tag automatically, so no manual tag is required.
 
@@ -105,6 +106,7 @@ settings in ISE:
 | File | Description |
 |------|-------------|
 | `install.sh` | Bootstrap script for one-line installation |
+| `QUICKSTART.md` | Customer setup guide installed as `README.md` by curl and ZIP installations |
 | `start.sh` | Stable bootstrap for the cached host controller |
 | `agentctl` | Versioned Docker/Podman and Compose lifecycle controller |
 | `docker-compose.yml` | Generated container definition (populated by install or update) |
