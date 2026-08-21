@@ -131,7 +131,7 @@ refresh_host_tools() (
 
   echo "Downloading the latest ISE agent host tools..."
   curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${staging}/SHA256SUMS"
-  for name in start.sh agentctl docker-compose.yml; do
+  for name in README.txt start.sh agentctl docker-compose.yml; do
     curl -fsSL "${RELEASE_ASSET_BASE}/${name}" -o "${staging}/${name}"
     verify_release_asset "${staging}" "${name}"
   done
@@ -148,10 +148,11 @@ refresh_host_tools() (
   cp .launcher/agentctl "${backup}/agentctl"
 
   chmod +x "${staging}/start.sh" "${staging}/agentctl"
+  mv "${staging}/README.txt" README.txt
   mv "${staging}/start.sh" start.sh
   mv "${staging}/agentctl" .launcher/agentctl
   mv "${staging}/docker-compose.rendered.yml" docker-compose.yml
-  echo "Updated start.sh, agentctl, and docker-compose.yml. Previous files are in .launcher/previous/."
+  echo "Updated README.txt, start.sh, agentctl, and docker-compose.yml. Previous host tools are in .launcher/previous/."
 )
 
 restore_host_tools() {
