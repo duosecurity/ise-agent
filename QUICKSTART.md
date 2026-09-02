@@ -120,7 +120,8 @@ ISE_AGENT_BOOTSTRAP_TOKEN=<one-time-token>
 ```
 
 ```sh
-python bootstrap_iot.py --environment --output-dir /bootstrap
+# Run this command in an init container using the ISE agent image.
+python -u /app/bootstrap_iot.py --environment --output-dir /bootstrap
 ```
 
 The output directory must be empty on the first run. The command creates the
