@@ -109,9 +109,12 @@ when those files do not already exist. The files are published atomically;
 existing encrypted files are preserved and take precedence. The `/app/certs`
 volume must be persistent across pod or container replacement. The agent does
 not copy plaintext credentials into generated files or emit them in logs. If
-you put onboarding values in `.env`, protect that file as sensitive and remove
-the values after both encrypted stores have been created. If no values are
-supplied, the normal interactive setup remains available.
+you put onboarding values in `.env`, protect that file as sensitive. After
+both encrypted stores have been created, remove the onboarding values from
+`.env` and recreate the container. For OpenShift or Kubernetes, remove the
+onboarding entries from the workload Secret and recreate the workload so the
+plaintext values are no longer present in the container environment. If no
+values are supplied, the normal interactive setup remains available.
 
 For a one-time IoT bootstrap on a platform without a terminal, provide the
 bootstrap endpoint and token through a Secret and run the image's bootstrap
@@ -129,10 +132,12 @@ python -u /app/bootstrap_iot.py --environment --output-dir /bootstrap
 
 The output directory must be empty on the first run. The command creates the
 generated `.env` and `certs/` files without prompting or overwriting existing
-agent configuration. Mount the generated `.env` and certificates into the
-agent workload as required by the platform, then remove the one-time token
-from the workload environment after bootstrap succeeds. Do not pass the
-bootstrap token to the long-running ISE agent container.
+agent configuration. Docker Compose imports the generated `.env` file. On
+OpenShift or Kubernetes, a mounted `.env` file is not imported automatically:
+load its entries into the workload with `env` or `envFrom`, and mount the
+generated `certs/` directory at `/app/certs`. After bootstrap succeeds, remove
+the one-time token from the Secret and recreate any workload that received it.
+Do not pass the bootstrap token to the long-running ISE agent container.
 
 ## Verify the connection
 
