@@ -51,7 +51,8 @@ cd ~/ise-agent
 ```
 
 The installer creates the deployment files and starts first-run credential and
-pxGrid setup.
+pxGrid setup. To run on a platform without an interactive terminal, use the
+noninteractive setup below.
 
 ### Downloaded ZIP
 
@@ -78,6 +79,56 @@ chmod +x ./start.sh
      that is already registered and approved.
 
 pxGrid is required for real-time session events and complete session data.
+
+## Noninteractive setup
+
+OpenShift and other container platforms that do not provide a terminal can
+configure the ISE agent from secret-backed environment variables. Supply these
+values to the agent container (or add them to `.env` before running
+`./start.sh`):
+
+```text
+ISE_HOST=<ISE hostname>
+ISE_USERNAME=<ISE administrator username>
+ISE_PASSWORD=<ISE administrator password>
+ISE_PORT=443
+ISE_HTTPS_PROXY=<optional http://proxy-host:port URL>
+PXGRID_NODE_NAME=cii-agent
+PXGRID_PASSWORD=<optional password for an existing approved pxGrid client>
+```
+
+`ISE_HOST`, `ISE_USERNAME`, and `ISE_PASSWORD` are required together. The
+other values are optional. `PXGRID_PASSWORD` is needed only when reusing an
+already registered and approved pxGrid client; without it, the agent creates a
+client that an ISE administrator must approve.
+
+On startup, the ISE agent validates these values and writes encrypted
+credentials to `/app/certs/.credentials.enc` and `/app/certs/.pxgrid.enc` only
+when those files do not already exist. Existing encrypted files are preserved
+and take precedence, so the `/app/certs` volume must be persistent across pod
+or container replacement. Passwords are not written to `.env` or emitted in
+logs. If no values are supplied, the normal interactive setup remains
+available.
+
+For a one-time IoT bootstrap on a platform without a terminal, provide the
+bootstrap endpoint and token through a Secret and run the image's bootstrap
+command from an init job or other preparation step:
+
+```text
+ISE_AGENT_BOOTSTRAP_ENDPOINT=https://<bootstrap-host>/<bootstrap-path>
+ISE_AGENT_BOOTSTRAP_TOKEN=<one-time-token>
+```
+
+```sh
+python bootstrap_iot.py --environment --output-dir /bootstrap
+```
+
+The output directory must be empty on the first run. The command creates the
+generated `.env` and `certs/` files without prompting or overwriting existing
+agent configuration. Mount the generated `.env` and certificates into the
+agent workload as required by the platform, then remove the one-time token
+from the workload environment after bootstrap succeeds. Do not pass the
+bootstrap token to the long-running ISE agent container.
 
 ## Verify the connection
 
