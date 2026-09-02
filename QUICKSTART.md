@@ -97,18 +97,21 @@ PXGRID_NODE_NAME=cii-agent
 PXGRID_PASSWORD=<optional password for an existing approved pxGrid client>
 ```
 
-`ISE_HOST`, `ISE_USERNAME`, and `ISE_PASSWORD` are required together. The
-other values are optional. `PXGRID_PASSWORD` is needed only when reusing an
-already registered and approved pxGrid client; without it, the agent creates a
-client that an ISE administrator must approve.
+`ISE_HOST`, `ISE_USERNAME`, `ISE_PASSWORD`, and `PXGRID_NODE_NAME` are required
+for a fully unattended first run. The port and proxy are optional.
+`PXGRID_PASSWORD` is needed only when reusing an already registered and
+approved pxGrid client; without it, the agent creates a client that an ISE
+administrator must approve.
 
 On startup, the ISE agent validates these values and writes encrypted
 credentials to `/app/certs/.credentials.enc` and `/app/certs/.pxgrid.enc` only
-when those files do not already exist. Existing encrypted files are preserved
-and take precedence, so the `/app/certs` volume must be persistent across pod
-or container replacement. Passwords are not written to `.env` or emitted in
-logs. If no values are supplied, the normal interactive setup remains
-available.
+when those files do not already exist. The files are published atomically;
+existing encrypted files are preserved and take precedence. The `/app/certs`
+volume must be persistent across pod or container replacement. The agent does
+not copy plaintext credentials into generated files or emit them in logs. If
+you put onboarding values in `.env`, protect that file as sensitive and remove
+the values after both encrypted stores have been created. If no values are
+supplied, the normal interactive setup remains available.
 
 For a one-time IoT bootstrap on a platform without a terminal, provide the
 bootstrap endpoint and token through a Secret and run the image's bootstrap
