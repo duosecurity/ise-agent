@@ -51,7 +51,8 @@ cd ~/ise-agent
 ```
 
 The installer creates the deployment files and starts first-run credential and
-pxGrid setup.
+pxGrid setup. To run on a platform without an interactive terminal, use the
+noninteractive setup below.
 
 ### Downloaded ZIP
 
@@ -78,6 +79,65 @@ chmod +x ./start.sh
      that is already registered and approved.
 
 pxGrid is required for real-time session events and complete session data.
+
+## Noninteractive setup
+
+OpenShift and other container platforms that do not provide a terminal can
+configure the ISE agent from secret-backed environment variables. Supply these
+values to the agent container (or add them to `.env` before running
+`./start.sh`):
+
+```text
+ISE_HOST=<ISE hostname>
+ISE_USERNAME=<ISE administrator username>
+ISE_PASSWORD=<ISE administrator password>
+ISE_PORT=443
+ISE_HTTPS_PROXY=<optional http://proxy-host:port URL>
+PXGRID_NODE_NAME=cii-agent
+PXGRID_PASSWORD=<optional password for an existing approved pxGrid client>
+```
+
+`ISE_HOST`, `ISE_USERNAME`, `ISE_PASSWORD`, and `PXGRID_NODE_NAME` are required
+for a fully unattended first run. The port and proxy are optional.
+`PXGRID_PASSWORD` is needed only when reusing an already registered and
+approved pxGrid client; without it, the agent creates a client that an ISE
+administrator must approve.
+
+On startup, the ISE agent validates these values and writes encrypted
+credentials to `/app/certs/.credentials.enc` and `/app/certs/.pxgrid.enc` only
+when those files do not already exist. The files are published atomically;
+existing encrypted files are preserved and take precedence. The `/app/certs`
+volume must be persistent across pod or container replacement. The agent does
+not copy plaintext credentials into generated files or emit them in logs. If
+you put onboarding values in `.env`, protect that file as sensitive. After
+both encrypted stores have been created, remove the onboarding values from
+`.env` and recreate the container. For OpenShift or Kubernetes, remove the
+onboarding entries from the workload Secret and recreate the workload so the
+plaintext values are no longer present in the container environment. If no
+values are supplied, the normal interactive setup remains available.
+
+For a one-time IoT bootstrap on a platform without a terminal, provide the
+bootstrap endpoint and token through a Secret and run the image's bootstrap
+command from an init job or other preparation step:
+
+```text
+ISE_AGENT_BOOTSTRAP_ENDPOINT=https://<bootstrap-host>/<bootstrap-path>
+ISE_AGENT_BOOTSTRAP_TOKEN=<one-time-token>
+```
+
+```sh
+# Run this command in an init container using the ISE agent image.
+python -u /app/bootstrap_iot.py --environment --output-dir /bootstrap
+```
+
+The output directory must be empty on the first run. The command creates the
+generated `.env` and `certs/` files without prompting or overwriting existing
+agent configuration. Docker Compose imports the generated `.env` file. On
+OpenShift or Kubernetes, a mounted `.env` file is not imported automatically:
+load its entries into the workload with `env` or `envFrom`, and mount the
+generated `certs/` directory at `/app/certs`. After bootstrap succeeds, remove
+the one-time token from the Secret and recreate any workload that received it.
+Do not pass the bootstrap token to the long-running ISE agent container.
 
 ## Verify the connection
 
