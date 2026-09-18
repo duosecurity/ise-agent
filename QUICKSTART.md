@@ -54,6 +54,12 @@ The installer creates the deployment files and starts first-run credential and
 pxGrid setup. To run on a platform without an interactive terminal, use the
 noninteractive setup below.
 
+The generated container is hardened automatically: rootful runtimes use the
+invoking host user's UID and GID, while rootless runtimes map container root to
+that unprivileged host user. The service drops all Linux capabilities, cannot
+gain new privileges, and uses a read-only image filesystem. Only the restricted
+temporary filesystem and persistent `/app/certs` volume remain writable.
+
 ### Downloaded ZIP
 
 Transfer the ZIP using your organization's approved secure method, extract the

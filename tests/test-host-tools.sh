@@ -158,6 +158,12 @@ test -f "${INSTALL_DIR}/.launcher/previous/agentctl"
 test -f "${INSTALL_DIR}/.launcher/previous/docker-compose.yml"
 test ! -d "${INSTALL_DIR}/.launcher/update.lock"
 ! grep -q '__AGENT_SUFFIX__\|__CONTAINER_NAME__' "${INSTALL_DIR}/docker-compose.yml"
+! grep -q '__CONTAINER_USER__' "${INSTALL_DIR}/docker-compose.yml"
+grep -Fq "user: \"$(id -u):$(id -g)\"" "${INSTALL_DIR}/docker-compose.yml"
+grep -q 'read_only: true' "${INSTALL_DIR}/docker-compose.yml"
+grep -q '      - ALL' "${INSTALL_DIR}/docker-compose.yml"
+grep -q '      - no-new-privileges:true' "${INSTALL_DIR}/docker-compose.yml"
+grep -q '      - /tmp:rw,noexec,nosuid,nodev,size=64m' "${INSTALL_DIR}/docker-compose.yml"
 grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
 grep -q 'compose .*config --quiet' "${COMMAND_LOG}"
 grep -q 'compose down' "${COMMAND_LOG}"
@@ -197,9 +203,22 @@ grep -Eq 'run --rm --pull=never --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND
 : > "${COMMAND_LOG}"
 PATH="${BIN_DIR}:${PATH}" \
 ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  "${PACKAGE_DIR}/start.sh" --reconfigure --no-pull
+grep -Eq 'run --rm --pull=never -i --user [0-9]+:[0-9]+ --env-file .*/\.env -v .*/certs:/app/certs --entrypoint python .* /app/setup_credentials.py' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
 ISE_AGENT_TEST_ROOTLESS=1 \
   "${PACKAGE_DIR}/start.sh" --no-pull
 grep -Eq 'run --rm --pull=never --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+PATH="${BIN_DIR}:${PATH}" \
+ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+ISE_AGENT_TEST_ROOTLESS=1 \
+  "${PACKAGE_DIR}/start.sh" --reconfigure --no-pull
+grep -Eq 'run --rm --pull=never -i --user 0:0 --env-file .*/\.env -v .*/certs:/app/certs --entrypoint python .* /app/setup_credentials.py' "${COMMAND_LOG}"
 
 HELP_OUTPUT=$(PATH="${BIN_DIR}:${PATH}" "${PACKAGE_DIR}/start.sh" --help)
 for option in \

@@ -25,6 +25,12 @@ The generated `.env` only includes connection settings. The agent image applies
 its built-in polling and telemetry cadence defaults unless you add optional
 interval overrides to `.env`.
 
+The generated Compose service runs with the invoking host user's identity on
+rootful runtimes, or rootless-container root mapped to the unprivileged host
+user. It drops every Linux capability, prevents privilege acquisition, uses a
+read-only image filesystem, and exposes only a restricted temporary filesystem
+plus the persistent certificates volume for writes.
+
 Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
 
 ## Releasing
