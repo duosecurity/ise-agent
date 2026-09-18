@@ -30,17 +30,18 @@ fi
 
 set_container_user_mode() {
   local runtime_info
-  RUN_AS_HOST_USER=1
+  CONTAINER_USER="$(id -u):$(id -g)"
 
-  # Rootless runtimes map container root to the caller. Forcing the caller's
-  # numeric UID instead maps to a subordinate UID that cannot write this mount.
+  # Rootless runtimes map container root to the unprivileged caller. Using the
+  # caller's numeric UID inside that namespace maps to a subordinate UID that
+  # cannot write the host-owned certificates mount.
   if [[ "${RUNTIME}" == "podman" ]]; then
     if ! runtime_info=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null); then
       echo "Error: unable to determine whether Podman is running rootless." >&2
       exit 1
     fi
     if [[ "${runtime_info}" == "true" ]]; then
-      RUN_AS_HOST_USER=0
+      CONTAINER_USER="0:0"
       return
     fi
   elif [[ "${RUNTIME}" == "docker" ]]; then
@@ -49,7 +50,7 @@ set_container_user_mode() {
       exit 1
     fi
     if [[ "${runtime_info}" == *rootless* ]]; then
-      RUN_AS_HOST_USER=0
+      CONTAINER_USER="0:0"
       return
     fi
   fi
@@ -116,12 +117,7 @@ echo "Pulling the ISE agent image..."
 echo "Installing the ISE agent credential bundle inside the container..."
 set_container_user_mode
 bootstrap_cmd=("${RUNTIME}" run --rm --pull=never -i)
-if [[ "${RUN_AS_HOST_USER}" == "1" ]]; then
-  bootstrap_cmd+=(--user "$(id -u):$(id -g)")
-else
-  # Do not depend on the image's configured USER across independent releases.
-  bootstrap_cmd+=(--user 0:0)
-fi
+bootstrap_cmd+=(--user "${CONTAINER_USER}")
 bootstrap_cmd+=(
   -v "${INSTALL_DIR}:/bootstrap"
   --entrypoint python "${IMAGE}" -u /app/bootstrap_iot.py
@@ -141,7 +137,7 @@ AGENT_SUFFIX="${AGENT_ID##*__}"
 AGENT_SUFFIX="${AGENT_SUFFIX:0:8}"
 CONTAINER_NAME="ise-agent-${AGENT_SUFFIX}"
 
-sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g" \
+sed "s|__CONTAINER_NAME__|${CONTAINER_NAME}|g; s|__AGENT_SUFFIX__|${AGENT_SUFFIX}|g; s|__CONTAINER_USER__|${CONTAINER_USER}|g" \
   "${TEMP_DIR}/docker-compose.yml.template" > "${TEMP_DIR}/docker-compose.yml"
 mkdir -p "${INSTALL_DIR}/.launcher"
 mv "${TEMP_DIR}/QUICKSTART.md" "${INSTALL_DIR}/README.md"

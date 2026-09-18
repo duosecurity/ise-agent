@@ -8,6 +8,14 @@ services:
     restart: always
     env_file: .env
     network_mode: ${ISE_AGENT_NETWORK_MODE:-bridge}
+    user: "__CONTAINER_USER__"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     stop_grace_period: 30s
     volumes:
       - ./certs:/app/certs
