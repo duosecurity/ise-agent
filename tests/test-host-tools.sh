@@ -17,6 +17,8 @@ PODMAN_PACKAGE_DIR="${TEST_ROOT}/podman-package"
 ROOTLESS_INSTALL_DIR="${TEST_ROOT}/rootless-install"
 ROOTFUL_INSTALL_DIR="${TEST_ROOT}/rootful-install"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
+UNTRUSTED_ENV_DIR="${TEST_ROOT}/untrusted-env"
+INVALID_AGENT_DIR="${TEST_ROOT}/invalid-agent"
 BIN_DIR="${TEST_ROOT}/bin"
 PODMAN_BIN_DIR="${TEST_ROOT}/podman-bin"
 PODMAN_INSTALL_BIN_DIR="${TEST_ROOT}/podman-install-bin"
@@ -32,6 +34,8 @@ mkdir -p \
   "${ROOTLESS_INSTALL_DIR}" \
   "${ROOTFUL_INSTALL_DIR}" \
   "${ROLLBACK_DIR}/.launcher" \
+  "${UNTRUSTED_ENV_DIR}/.launcher" \
+  "${INVALID_AGENT_DIR}/.launcher" \
   "${BIN_DIR}" \
   "${PODMAN_BIN_DIR}" \
   "${PODMAN_INSTALL_BIN_DIR}"
@@ -162,6 +166,50 @@ grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
 grep -q 'compose .*config --quiet' "${COMMAND_LOG}"
 grep -q 'compose down' "${COMMAND_LOG}"
 grep -q 'compose up -d' "${COMMAND_LOG}"
+
+for test_directory in "${UNTRUSTED_ENV_DIR}" "${INVALID_AGENT_DIR}"; do
+  cp "${REPOSITORY_ROOT}/start.sh" "${test_directory}/start.sh"
+  cp "${REPOSITORY_ROOT}/agentctl" "${test_directory}/.launcher/agentctl"
+  cp "${REPOSITORY_ROOT}/docker-compose.yml" "${test_directory}/docker-compose.yml"
+  chmod +x "${test_directory}/start.sh" "${test_directory}/.launcher/agentctl"
+done
+
+INJECTION_MARKER="${TEST_ROOT}/env-command-executed"
+printf '%s\n' \
+  'AGENT_ID=test-tenant__ISE__12345678-abcd' \
+  "ISE_AGENT_NETWORK_MODE=\$(touch \"${INJECTION_MARKER}\")" \
+  > "${UNTRUSTED_ENV_DIR}/.env"
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+    "${UNTRUSTED_ENV_DIR}/start.sh" --stop; then
+  echo "Expected an executable network-mode value to be rejected." >&2
+  exit 1
+fi
+test ! -e "${INJECTION_MARKER}"
+
+cat > "${UNTRUSTED_ENV_DIR}/.env" <<'EOF'
+AGENT_ID=test-tenant__ISE__12345678-abcd
+ISE_AGENT_NETWORK_MODE=bridge
+ISE_AGENT_NETWORK_MODE=host
+EOF
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+    "${UNTRUSTED_ENV_DIR}/start.sh" --stop; then
+  echo "Expected duplicate network-mode values to be rejected." >&2
+  exit 1
+fi
+
+cat > "${INVALID_AGENT_DIR}/.env" <<'EOF'
+AGENT_ID=test-tenant__ISE__invalid|sed
+EOF
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
+    "${INVALID_AGENT_DIR}/start.sh" --update; then
+  echo "Expected an unsafe agent ID to be rejected before compose rendering." >&2
+  exit 1
+fi
+test ! -f "${INVALID_AGENT_DIR}/.launcher/previous/start.sh"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${BOOTSTRAP_DIR}/start.sh"
 chmod +x "${BOOTSTRAP_DIR}/start.sh"
