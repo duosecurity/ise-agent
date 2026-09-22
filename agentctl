@@ -98,13 +98,38 @@ verify_release_asset() {
   fi
 }
 
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  local line value="" found="0"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" == "${key}="* ]]; then
+      if [[ "${found}" == "1" ]]; then
+        echo "Error: ${key} is defined more than once in ${file}." >&2
+        return 1
+      fi
+      value="${line#*=}"
+      found="1"
+    fi
+  done < "${file}"
+
+  printf '%s' "${value}"
+}
+
 render_compose_file() {
   local template="$1"
   local destination="$2"
   local agent_id agent_suffix container_name
-  agent_id=$(sed -n 's/^AGENT_ID=//p' .env | head -1)
+  if ! agent_id=$(read_env_value .env AGENT_ID); then
+    return 1
+  fi
   if [[ -z "${agent_id}" ]]; then
     echo "Error: AGENT_ID is missing from .env." >&2
+    return 1
+  fi
+  if [[ ! "${agent_id}" =~ __ISE__[A-Za-z0-9-]+$ ]]; then
+    echo "Error: AGENT_ID in .env has an invalid format." >&2
     return 1
   fi
   agent_suffix="${agent_id##*__}"
@@ -173,11 +198,9 @@ load_network_mode() {
   local network_mode="${ISE_AGENT_NETWORK_MODE:-}"
 
   if [[ -z "${network_mode}" ]] && [[ -r ".env" ]]; then
-    network_mode=$(
-      # shellcheck disable=SC1091
-      source .env
-      printf '%s' "${ISE_AGENT_NETWORK_MODE:-}"
-    )
+    if ! network_mode=$(read_env_value .env ISE_AGENT_NETWORK_MODE); then
+      return 1
+    fi
   fi
 
   ISE_AGENT_NETWORK_MODE="${network_mode:-bridge}"
@@ -186,7 +209,7 @@ load_network_mode() {
       ;;
     *)
       echo "Error: ISE_AGENT_NETWORK_MODE must be bridge or host." >&2
-      exit 1
+      return 1
       ;;
   esac
 
