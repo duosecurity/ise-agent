@@ -1,0 +1,28 @@
+packaging/create-source-tar.sh
+  s_c4227a1d7ca158::t_6e59553104513a 138-143,149-158
+  s_0c872168b2e1a1::t_c9ae9c8e21a654 1-137,144-148,159-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "696e0757726c16a0e11ad73cae97d53dcc402423",
+  "prompts": {},
+  "sessions": {
+    "s_0c872168b2e1a1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cee6-a548-7a90-999d-1aa51ece1d34",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    },
+    "s_c4227a1d7ca158": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e78b-df41-7601-86a6-b54a3f150b50",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Nagaraju Pavar <npavar@cisco.com>"
+    }
+  }
+}
