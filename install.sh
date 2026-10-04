@@ -2,7 +2,23 @@
 set -euo pipefail
 
 RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
-IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+IMAGE="${ISE_AGENT_IMAGE:-ghcr.io/duosecurity/ise-agent:stable}"
+RELEASE_CHANNEL="${ISE_AGENT_RELEASE_CHANNEL:-STABLE}"
+RELEASE_DIGEST="${ISE_AGENT_RELEASE_DIGEST:-}"
+UPDATE_MANIFEST="${UPDATE_MANIFEST_URL:-ghcr.io/duosecurity/ise-agent:updates-stable}"
+
+validate_release_value() {
+  local name="$1" value="$2"
+  if [[ -z "${value}" ]] || [[ "${value}" == *$'\n'* ]] || [[ "${value}" == *$'\r'* ]]; then
+    echo "Error: invalid ${name}." >&2
+    exit 1
+  fi
+}
+
+validate_release_value ISE_AGENT_IMAGE "${IMAGE}"
+validate_release_value ISE_AGENT_RELEASE_CHANNEL "${RELEASE_CHANNEL}"
+validate_release_value UPDATE_MANIFEST_URL "${UPDATE_MANIFEST}"
+validate_release_value ISE_AGENT_RELEASE_ASSET_BASE "${RELEASE_ASSET_BASE}"
 
 BUNDLE="${1:-}"
 set --
@@ -136,6 +152,16 @@ if [[ ! "${AGENT_ID}" =~ __ISE__[A-Za-z0-9-]+$ ]]; then
   echo "Error: bootstrap did not return an agent ID." >&2
   exit 1
 fi
+
+cat >> "${INSTALL_DIR}/.env" <<EOF
+
+# ISE agent release selected by CII
+ISE_AGENT_IMAGE=${IMAGE}
+ISE_AGENT_RELEASE_CHANNEL=${RELEASE_CHANNEL}
+ISE_AGENT_RELEASE_DIGEST=${RELEASE_DIGEST}
+UPDATE_MANIFEST_URL=${UPDATE_MANIFEST}
+ISE_AGENT_RELEASE_ASSET_BASE=${RELEASE_ASSET_BASE}
+EOF
 
 AGENT_SUFFIX="${AGENT_ID##*__}"
 AGENT_SUFFIX="${AGENT_SUFFIX:0:8}"

@@ -2,7 +2,7 @@ name: ise-agent-__AGENT_SUFFIX__
 
 services:
   ise-agent:
-    image: ghcr.io/duosecurity/ise-agent:latest
+    image: ${ISE_AGENT_IMAGE:-ghcr.io/duosecurity/ise-agent:stable}
     pull_policy: never
     container_name: __CONTAINER_NAME__
     restart: always

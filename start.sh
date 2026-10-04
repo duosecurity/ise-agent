@@ -7,7 +7,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONTROLLER="${SCRIPT_DIR}/.launcher/agentctl"
-RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
+read_env_value() {
+  local key="$1"
+  [[ -r "${SCRIPT_DIR}/.env" ]] || return 0
+  sed -n "s/^${key}=//p" "${SCRIPT_DIR}/.env" | head -1
+}
+
+RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-$(read_env_value ISE_AGENT_RELEASE_ASSET_BASE)}"
+RELEASE_ASSET_BASE="${RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
 
 checksum_file() {
   if command -v sha256sum &>/dev/null; then
