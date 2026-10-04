@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feat/isecc-129-campus-segmentation
 
 permissions:
   contents: read
@@ -38,7 +39,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="release-${GITHUB_SHA::12}"
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            channel="stable"
+          else
+            channel="campus-beta"
+          fi
+          tag="${channel}-${GITHUB_SHA::12}"
           gh release create "${tag}" \
             install.sh \
             QUICKSTART.md \
@@ -50,7 +56,6 @@ jobs:
             --generate-notes \
             --latest=false
 
-          main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
-          if [[ "${main_sha}" == "${GITHUB_SHA}" ]]; then
+          if [[ "${channel}" == "stable" ]]; then
             gh release edit "${tag}" --latest
           fi

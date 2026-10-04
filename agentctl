@@ -2,7 +2,7 @@
 #
 # Versioned host controller for the ISE Agent.
 #
-# This file is refreshed from the latest GitHub Release by `./start.sh --update`.
+# This file is refreshed from the tenant-selected release by `./start.sh --update`.
 # Keep the stable start.sh bootstrap small; host-side lifecycle behavior belongs
 # here, while credential and ISE-specific setup remains inside the agent image.
 #
@@ -12,11 +12,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${SCRIPT_DIR}"
 
-RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
+read_env_value() {
+  local key="$1"
+  [[ -r .env ]] || return 0
+  sed -n "s/^${key}=//p" .env | head -1
+}
+
+RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-$(read_env_value ISE_AGENT_RELEASE_ASSET_BASE)}"
+RELEASE_ASSET_BASE="${RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
 CREDENTIALS_FILE="./certs/.credentials.enc"
 KEY_FILE="./certs/private.pem.key"
 CERT_FILE="./certs/certificate.pem.crt"
-IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+IMAGE="${ISE_AGENT_IMAGE:-$(read_env_value ISE_AGENT_IMAGE)}"
+IMAGE="${IMAGE:-ghcr.io/duosecurity/ise-agent:stable}"
 CONTAINER_NAME=$(awk '/container_name:/ {print $2; exit}' docker-compose.yml 2>/dev/null || true)
 CONTAINER_NAME="${CONTAINER_NAME:-ise-agent}"
 PULL_IMAGE=1
@@ -129,7 +137,7 @@ refresh_host_tools() (
   }
   trap cleanup_host_update EXIT
 
-  echo "Downloading the latest ISE agent host tools..."
+  echo "Downloading the tenant-selected ISE agent host tools..."
   curl -fsSL "${RELEASE_ASSET_BASE}/SHA256SUMS" -o "${staging}/SHA256SUMS"
   for name in start.sh agentctl docker-compose.yml; do
     curl -fsSL "${RELEASE_ASSET_BASE}/${name}" -o "${staging}/${name}"
@@ -273,7 +281,7 @@ pull_image_once() {
     return
   fi
 
-  echo "Pulling latest ISE agent image..."
+  echo "Pulling selected ISE agent image..."
   "${RUNTIME}" pull "${IMAGE}"
   IMAGE_PULLED=1
 }
