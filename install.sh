@@ -2,7 +2,12 @@
 set -euo pipefail
 
 RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
-IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+IMAGE="${ISE_AGENT_IMAGE:-ghcr.io/duosecurity/ise-agent:latest}"
+
+if [[ ! "${IMAGE}" =~ ^ghcr\.io/duosecurity/ise-agent(@sha256:[0-9a-f]{64}|:latest)$ ]]; then
+  echo "Error: invalid ISE_AGENT_IMAGE." >&2
+  exit 1
+fi
 
 BUNDLE="${1:-}"
 set --
@@ -136,6 +141,9 @@ if [[ ! "${AGENT_ID}" =~ __ISE__[A-Za-z0-9-]+$ ]]; then
   echo "Error: bootstrap did not return an agent ID." >&2
   exit 1
 fi
+
+printf '\n# ISE agent image selected during package generation\nISE_AGENT_IMAGE=%s\n' "${IMAGE}" \
+  >> "${INSTALL_DIR}/.env"
 
 AGENT_SUFFIX="${AGENT_ID##*__}"
 AGENT_SUFFIX="${AGENT_SUFFIX:0:8}"

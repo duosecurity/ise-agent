@@ -16,7 +16,14 @@ RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecuri
 CREDENTIALS_FILE="./certs/.credentials.enc"
 KEY_FILE="./certs/private.pem.key"
 CERT_FILE="./certs/certificate.pem.crt"
-IMAGE="ghcr.io/duosecurity/ise-agent:latest"
+read_env_value() {
+  local key="$1"
+  [[ -r .env ]] || return 0
+  sed -n "s/^${key}=//p" .env | tail -1
+}
+
+IMAGE="${ISE_AGENT_IMAGE:-$(read_env_value ISE_AGENT_IMAGE)}"
+IMAGE="${IMAGE:-ghcr.io/duosecurity/ise-agent:latest}"
 CONTAINER_NAME=$(awk '/container_name:/ {print $2; exit}' docker-compose.yml 2>/dev/null || true)
 CONTAINER_NAME="${CONTAINER_NAME:-ise-agent}"
 PULL_IMAGE=1
