@@ -16,6 +16,7 @@ PACKAGE_DIR="${TEST_ROOT}/package"
 PODMAN_PACKAGE_DIR="${TEST_ROOT}/podman-package"
 ROOTLESS_INSTALL_DIR="${TEST_ROOT}/rootless-install"
 ROOTFUL_INSTALL_DIR="${TEST_ROOT}/rootful-install"
+INVALID_IMAGE_DIR="${TEST_ROOT}/invalid-image"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
 BIN_DIR="${TEST_ROOT}/bin"
 PODMAN_BIN_DIR="${TEST_ROOT}/podman-bin"
@@ -31,6 +32,7 @@ mkdir -p \
   "${PODMAN_PACKAGE_DIR}/certs" \
   "${ROOTLESS_INSTALL_DIR}" \
   "${ROOTFUL_INSTALL_DIR}" \
+  "${INVALID_IMAGE_DIR}/.launcher" \
   "${ROLLBACK_DIR}/.launcher" \
   "${BIN_DIR}" \
   "${PODMAN_BIN_DIR}" \
@@ -109,6 +111,23 @@ exit 1
 EOF
 chmod +x "${PODMAN_BIN_DIR}/docker"
 
+if ISE_AGENT_IMAGE='ghcr.io/example/ise-agent:untrusted' \
+  "${REPOSITORY_ROOT}/install.sh" test-bundle; then
+  echo "Expected an unapproved ISE agent image to be rejected." >&2
+  exit 1
+fi
+
+cp "${REPOSITORY_ROOT}/agentctl" "${INVALID_IMAGE_DIR}/.launcher/agentctl"
+cp "${REPOSITORY_ROOT}/docker-compose.yml" "${INVALID_IMAGE_DIR}/docker-compose.yml"
+cat > "${INVALID_IMAGE_DIR}/.env" <<'EOF'
+AGENT_ID=test-tenant__ISE__12345678-abcd
+ISE_AGENT_IMAGE=ghcr.io/example/ise-agent:untrusted
+EOF
+if (cd "${INVALID_IMAGE_DIR}" && ./.launcher/agentctl --help); then
+  echo "Expected an unapproved ISE agent image in .env to be rejected." >&2
+  exit 1
+fi
+
 : > "${COMMAND_LOG}"
 if (
   cd "${ROOTLESS_INSTALL_DIR}"
@@ -138,6 +157,7 @@ if (
   exit 1
 fi
 grep -Eq 'run --rm --pull=never -i --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${INSTALL_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
@@ -145,6 +165,7 @@ cp "${REPOSITORY_ROOT}/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
 chmod +x "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/.launcher/agentctl"
 cat > "${INSTALL_DIR}/.env" <<'EOF'
 AGENT_ID=test-tenant__ISE__12345678-abcd
+ISE_AGENT_IMAGE=ghcr.io/duosecurity/ise-agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 EOF
 
 PATH="${BIN_DIR}:${PATH}" \
@@ -158,7 +179,7 @@ test -f "${INSTALL_DIR}/.launcher/previous/agentctl"
 test -f "${INSTALL_DIR}/.launcher/previous/docker-compose.yml"
 test ! -d "${INSTALL_DIR}/.launcher/update.lock"
 ! grep -q '__AGENT_SUFFIX__\|__CONTAINER_NAME__' "${INSTALL_DIR}/docker-compose.yml"
-grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
+grep -q 'pull ghcr.io/duosecurity/ise-agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "${COMMAND_LOG}"
 grep -q 'compose .*config --quiet' "${COMMAND_LOG}"
 grep -q 'compose down' "${COMMAND_LOG}"
 grep -q 'compose up -d' "${COMMAND_LOG}"
@@ -178,6 +199,7 @@ cp "${REPOSITORY_ROOT}/docker-compose.yml" "${PACKAGE_DIR}/docker-compose.yml"
 chmod +x "${PACKAGE_DIR}/start.sh" "${PACKAGE_DIR}/.launcher/agentctl"
 cat > "${PACKAGE_DIR}/.env" <<'EOF'
 AGENT_ID=test-tenant__ISE__12345678-abcd
+ISE_AGENT_IMAGE=ghcr.io/duosecurity/ise-agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 EOF
 printf '%s\n' 'https://api.example.test/ise-agent/bootstrap' > "${PACKAGE_DIR}/certs/certificate.pem.crt"
 printf '%s\n' 'iseb1.token.secret' > "${PACKAGE_DIR}/certs/private.pem.key"
