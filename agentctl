@@ -24,6 +24,10 @@ read_env_value() {
 
 IMAGE="${ISE_AGENT_IMAGE:-$(read_env_value ISE_AGENT_IMAGE)}"
 IMAGE="${IMAGE:-ghcr.io/duosecurity/ise-agent:latest}"
+if [[ ! "${IMAGE}" =~ ^ghcr\.io/duosecurity/ise-agent(@sha256:[0-9a-f]{64}|:latest)$ ]]; then
+  echo "Error: invalid ISE_AGENT_IMAGE." >&2
+  exit 1
+fi
 CONTAINER_NAME=$(awk '/container_name:/ {print $2; exit}' docker-compose.yml 2>/dev/null || true)
 CONTAINER_NAME="${CONTAINER_NAME:-ise-agent}"
 PULL_IMAGE=1

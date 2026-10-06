@@ -16,6 +16,7 @@ PACKAGE_DIR="${TEST_ROOT}/package"
 PODMAN_PACKAGE_DIR="${TEST_ROOT}/podman-package"
 ROOTLESS_INSTALL_DIR="${TEST_ROOT}/rootless-install"
 ROOTFUL_INSTALL_DIR="${TEST_ROOT}/rootful-install"
+INVALID_IMAGE_DIR="${TEST_ROOT}/invalid-image"
 ROLLBACK_DIR="${TEST_ROOT}/rollback"
 BIN_DIR="${TEST_ROOT}/bin"
 PODMAN_BIN_DIR="${TEST_ROOT}/podman-bin"
@@ -31,6 +32,7 @@ mkdir -p \
   "${PODMAN_PACKAGE_DIR}/certs" \
   "${ROOTLESS_INSTALL_DIR}" \
   "${ROOTFUL_INSTALL_DIR}" \
+  "${INVALID_IMAGE_DIR}/.launcher" \
   "${ROLLBACK_DIR}/.launcher" \
   "${BIN_DIR}" \
   "${PODMAN_BIN_DIR}" \
@@ -112,6 +114,17 @@ chmod +x "${PODMAN_BIN_DIR}/docker"
 if ISE_AGENT_IMAGE='ghcr.io/example/ise-agent:untrusted' \
   "${REPOSITORY_ROOT}/install.sh" test-bundle; then
   echo "Expected an unapproved ISE agent image to be rejected." >&2
+  exit 1
+fi
+
+cp "${REPOSITORY_ROOT}/agentctl" "${INVALID_IMAGE_DIR}/.launcher/agentctl"
+cp "${REPOSITORY_ROOT}/docker-compose.yml" "${INVALID_IMAGE_DIR}/docker-compose.yml"
+cat > "${INVALID_IMAGE_DIR}/.env" <<'EOF'
+AGENT_ID=test-tenant__ISE__12345678-abcd
+ISE_AGENT_IMAGE=ghcr.io/example/ise-agent:untrusted
+EOF
+if (cd "${INVALID_IMAGE_DIR}" && ./.launcher/agentctl --help); then
+  echo "Expected an unapproved ISE agent image in .env to be rejected." >&2
   exit 1
 fi
 
