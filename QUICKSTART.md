@@ -25,6 +25,8 @@ the first connection. For complete setup and troubleshooting guidance, see the
   node.
 - Arrange for an ISE administrator to approve the agent's pxGrid client if you
   will create a new one.
+- If ISE uses a private or self-signed certificate authority, obtain the PEM
+  CA chain that issued the ISE certificates. Do not copy an ISE private key.
 
 ## Protect the deployment material
 
@@ -64,6 +66,43 @@ cd ~/ise-agent
 chmod +x ./start.sh
 ./start.sh
 ```
+
+## Trust private or self-signed ISE certificates
+
+The ISE agent verifies certificate chains and hostnames for every ISE HTTPS and
+pxGrid connection. No additional configuration is needed when ISE presents a
+certificate issued by a CA in the container's system trust store.
+
+For a private or self-signed ISE CA, complete these steps before first-run
+credential validation or before updating an existing agent to a version that
+enforces TLS verification:
+
+1. Confirm that the hostname configured for ISE appears in the certificate's
+   subject alternative names. Use the hostname rather than its IP address when
+   the certificate covers only the hostname.
+2. Copy the issuing root and any required intermediate CA certificates as one
+   PEM bundle under the persistent deployment directory:
+
+   ```sh
+   cp /approved/path/ise-ca.pem ~/ise-agent/certs/ise-ca.pem
+   chmod 0644 ~/ise-agent/certs/ise-ca.pem
+   ```
+
+3. Add these values to `~/ise-agent/.env`:
+
+   ```text
+   ISE_TLS_VERIFY=true
+   ISE_CA_BUNDLE=/app/certs/ise-ca.pem
+   ```
+
+4. Start the agent, or run `./start.sh --update` after preparing an existing
+   installation. Check the logs for certificate or hostname validation errors.
+
+If a copied install command starts the agent before you can add the CA bundle,
+let the validation fail without saving credentials, add the bundle and `.env`
+settings above, and run `./start.sh` again. `ISE_TLS_VERIFY=false` is only an
+escape hatch for an isolated local test; do not use it in production or shared
+environments.
 
 ## Complete first-run setup
 
