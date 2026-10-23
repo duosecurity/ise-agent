@@ -143,11 +143,13 @@ if (
 fi
 grep -q '/app/bootstrap_iot.py --bundle --output-dir /bootstrap' "${COMMAND_LOG}"
 grep -Eq 'run --rm --pull=never -i --user 0:0 -v .*/bootstrap' "${COMMAND_LOG}"
+grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
 
 : > "${COMMAND_LOG}"
 if (
   cd "${ROOTFUL_INSTALL_DIR}"
   PATH="${PODMAN_INSTALL_BIN_DIR}" \
+  ISE_AGENT_IMAGE="ghcr.io/duosecurity/ise-agent:campus-beta" \
   ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
   ISE_AGENT_TEST_FAIL_BOOTSTRAP=1 \
   ISE_AGENT_RELEASE_ASSET_BASE="file://${RELEASE_DIR}" \
@@ -157,7 +159,7 @@ if (
   exit 1
 fi
 grep -Eq 'run --rm --pull=never -i --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
-grep -q 'pull ghcr.io/duosecurity/ise-agent:latest' "${COMMAND_LOG}"
+grep -q 'pull ghcr.io/duosecurity/ise-agent:campus-beta' "${COMMAND_LOG}"
 
 cp "${REPOSITORY_ROOT}/start.sh" "${INSTALL_DIR}/start.sh"
 cp "${REPOSITORY_ROOT}/agentctl" "${INSTALL_DIR}/.launcher/agentctl"
@@ -165,7 +167,7 @@ cp "${REPOSITORY_ROOT}/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
 chmod +x "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/.launcher/agentctl"
 cat > "${INSTALL_DIR}/.env" <<'EOF'
 AGENT_ID=test-tenant__ISE__12345678-abcd
-ISE_AGENT_IMAGE=ghcr.io/duosecurity/ise-agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ISE_AGENT_IMAGE=ghcr.io/duosecurity/ise-agent:campus-beta
 EOF
 
 PATH="${BIN_DIR}:${PATH}" \
@@ -179,7 +181,7 @@ test -f "${INSTALL_DIR}/.launcher/previous/agentctl"
 test -f "${INSTALL_DIR}/.launcher/previous/docker-compose.yml"
 test ! -d "${INSTALL_DIR}/.launcher/update.lock"
 ! grep -q '__AGENT_SUFFIX__\|__CONTAINER_NAME__' "${INSTALL_DIR}/docker-compose.yml"
-grep -q 'pull ghcr.io/duosecurity/ise-agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "${COMMAND_LOG}"
+grep -q 'pull ghcr.io/duosecurity/ise-agent:campus-beta' "${COMMAND_LOG}"
 grep -q 'compose .*config --quiet' "${COMMAND_LOG}"
 grep -q 'compose down' "${COMMAND_LOG}"
 grep -q 'compose up -d' "${COMMAND_LOG}"
