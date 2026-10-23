@@ -4,7 +4,7 @@ set -euo pipefail
 RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecurity/ise-agent/releases/latest/download}"
 IMAGE="${ISE_AGENT_IMAGE:-ghcr.io/duosecurity/ise-agent:latest}"
 
-if [[ ! "${IMAGE}" =~ ^ghcr\.io/duosecurity/ise-agent(@sha256:[0-9a-f]{64}|:latest)$ ]]; then
+if [[ ! "${IMAGE}" =~ ^ghcr\.io/duosecurity/ise-agent(@sha256:[0-9a-f]{64}|:(latest|campus-beta))$ ]]; then
   echo "Error: invalid ISE_AGENT_IMAGE." >&2
   exit 1
 fi
