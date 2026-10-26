@@ -12,8 +12,19 @@ fi
 BUNDLE="${1:-}"
 set --
 
+if [[ "${BUNDLE}" == "--resume" ]]; then
+  if [[ ! -x ./start.sh ]] || [[ ! -x ./.launcher/agentctl ]] \
+    || [[ ! -f ./docker-compose.yml ]] || [[ ! -f ./.env ]] \
+    || [[ ! -f ./certs/certificate.pem.crt ]] || [[ ! -f ./certs/private.pem.key ]]; then
+    echo "Error: no complete host installation to resume in this directory. Restore its original deployment files or install a fresh package in a new directory." >&2
+    exit 1
+  fi
+  exec ./start.sh --resume < /dev/tty
+fi
+
 if [[ -z "${BUNDLE}" ]]; then
   echo "Usage: cd <install-dir> && curl -fsSL <url>/install.sh | bash -s \"<bundle>\"" >&2
+  echo "Resume an existing installation: ./start.sh --resume (or run this installer with --resume)." >&2
   exit 1
 fi
 
@@ -79,6 +90,8 @@ for target in \
   "${INSTALL_DIR}/certs/private.pem.key"; do
   if [[ -e "${target}" ]]; then
     echo "Error: refusing to overwrite existing agent configuration at ${target}." >&2
+    echo "To resume this deployment, run ./start.sh --resume from its installation directory." >&2
+    echo "If the deployment was deleted or its cloud credentials reset, install a fresh package in a new directory." >&2
     exit 1
   fi
 done

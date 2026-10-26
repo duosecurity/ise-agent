@@ -80,6 +80,28 @@ chmod +x ./start.sh
 
 pxGrid is required for real-time session events and complete session data.
 
+### If setup stops or credentials are rejected
+
+Keep the deployment files in their original directory and run:
+
+```sh
+./start.sh --resume
+```
+
+The host retains its certificate/key and completed configuration, stops the
+service, and runs ISE and pxGrid setup again. Interactive setup prompts again;
+environment-driven setup preserves existing encrypted stores. The redeemed token
+is not redeemed again. Correct the reported problem before retrying; this command
+does not bypass ISE account lockout or pxGrid approval.
+
+After the container starts, follow **Verify the connection** below. Container
+creation alone does not prove cloud authentication or pxGrid readiness.
+
+If you deleted the cloud deployment or reset its credentials, stop the old
+agent and install a newly generated package into a new dedicated directory.
+Do not reuse the old identity or replace its files with a new token. Stop and
+log-collection commands remain available while host setup is incomplete.
+
 ## Noninteractive setup
 
 OpenShift and other container platforms that do not provide a terminal can

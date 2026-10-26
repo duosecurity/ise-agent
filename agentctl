@@ -16,6 +16,7 @@ RELEASE_ASSET_BASE="${ISE_AGENT_RELEASE_ASSET_BASE:-https://github.com/duosecuri
 CREDENTIALS_FILE="./certs/.credentials.enc"
 KEY_FILE="./certs/private.pem.key"
 CERT_FILE="./certs/certificate.pem.crt"
+SETUP_PENDING=".launcher/setup.pending"
 read_env_value() {
   local key="$1"
   [[ -r .env ]] || return 0
@@ -43,6 +44,7 @@ Usage: ./start.sh [option] [--no-pull]
 Manage the ISE agent:
   (no option)                 Start the ISE agent and configure it if needed
   --reconfigure               Re-enter ISE credentials
+  --resume                    Resume interrupted setup using saved enrollment
   --update                    Update host tools and the agent image, then restart
   --rollback                  Roll back to the retained previous application bundle
   --enable-auto-updates       Enable signed application-bundle update checks
@@ -399,6 +401,7 @@ for arg in "$@"; do
   case "${arg}" in
     --help|-h) ACTION="help" ;;
     --reconfigure) ACTION="reconfigure" ;;
+    --resume) ACTION="resume" ;;
     --stop) ACTION="stop" ;;
     --update) ACTION="update" ;;
     --rollback) ACTION="rollback" ;;
@@ -428,6 +431,13 @@ if [[ "${ACTION}" == "stop" ]]; then
   echo "Stopping ISE agent..."
   compose_cmd down
   exit 0
+fi
+
+if [[ -e "${SETUP_PENDING}" ]] && [[ "${ACTION}" != "resume" ]] \
+  && [[ "${ACTION}" != "collect-logs" ]]; then
+  echo "Initial setup is incomplete. Run ./start.sh --resume to continue with the saved enrollment." >&2
+  echo "The redeemed token is not redeemed again. If the cloud deployment was deleted or reset, use a fresh package in a new directory." >&2
+  exit 1
 fi
 
 if [[ "${ACTION}" == "update" ]]; then
@@ -470,6 +480,52 @@ if [[ "${ACTION}" == "disable-auto-updates" ]]; then
   exit 0
 fi
 
+SETUP_LOCK=".launcher/setup.lock"
+SETUP_LOCK_HELD=0
+cleanup_setup() {
+  local result=$?
+  if [[ "${SETUP_LOCK_HELD}" == "1" ]]; then
+    if [[ "${result}" != "0" ]] && [[ -f "${SETUP_PENDING}" ]]; then
+      echo "Setup did not finish. Saved enrollment and completed configuration were retained." >&2
+      echo "Fix the reported problem, then run ./start.sh --resume. Do not paste the old install token again." >&2
+    fi
+    rmdir "${SETUP_LOCK}" 2>/dev/null || true
+  fi
+}
+
+record_setup_phase() {
+  local phase="$1" temporary
+  temporary=$(umask 077 && mktemp ".launcher/.setup.pending.XXXXXX")
+  printf '%s\n' "${phase}" > "${temporary}"
+  mv "${temporary}" "${SETUP_PENDING}"
+}
+
+if [[ -z "${ACTION}" ]] || [[ "${ACTION}" == "resume" ]] \
+  || [[ "${ACTION}" == "reconfigure" ]]; then
+  mkdir -p .launcher
+  if ! mkdir "${SETUP_LOCK}" 2>/dev/null; then
+    echo "Error: another setup may be running. After confirming it has stopped, remove .launcher/setup.lock and retry." >&2
+    exit 1
+  fi
+  SETUP_LOCK_HELD=1
+  trap cleanup_setup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
+
+if [[ "${ACTION}" == "resume" ]]; then
+  if [[ "$(head -n 1 "${CERT_FILE}")" != "-----BEGIN CERTIFICATE-----" ]]; then
+    echo "Error: no redeemed cloud certificate to resume. Run normal first-time setup to redeem the packaged token." >&2
+    exit 1
+  fi
+  record_setup_phase credentials
+  echo "Resuming setup with the saved cloud certificate and key; no new token will be redeemed."
+  echo "If the cloud deployment was deleted or reset, stop here and use a fresh package in a new directory."
+  # Credential setup can authenticate with the agent's MQTT client ID when a
+  # proxy is configured. Stop the service first to avoid concurrent use.
+  compose_cmd stop ise-agent
+fi
+
 redeem_packaged_bootstrap
 
 if [[ "${ACTION}" == "enable-pxgrid" ]]; then
@@ -484,21 +540,45 @@ if [[ "${ACTION}" == "disable-pxgrid" ]]; then
   exit 0
 fi
 
-FIRST_RUN=0
-if [[ "${ACTION}" == "reconfigure" ]] || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
-  [[ ! -f "${CREDENTIALS_FILE}" ]] && FIRST_RUN=1
+INITIAL_SETUP=0
+if [[ "${ACTION}" == "resume" ]] || [[ -f "${SETUP_PENDING}" ]] \
+  || [[ ! -f "${CREDENTIALS_FILE}" ]] || [[ ! -f "./certs/.pxgrid.enc" ]]; then
+  INITIAL_SETUP=1
+  record_setup_phase credentials
+fi
+
+if [[ "${ACTION}" == "reconfigure" ]] || [[ "${ACTION}" == "resume" ]] \
+  || [[ ! -f "${CREDENTIALS_FILE}" ]]; then
   echo ""
   echo "Running ISE credential setup inside container..."
   run_in_container setup_credentials.py
+  if [[ ! -s "${CREDENTIALS_FILE}" ]]; then
+    echo "Error: ISE setup did not produce a credential store; setup remains incomplete." >&2
+    exit 1
+  fi
 fi
 
-if [[ "${FIRST_RUN}" == "1" ]] && [[ ! -f "./certs/.pxgrid.enc" ]]; then
+if [[ "${INITIAL_SETUP}" == "1" ]]; then
+  record_setup_phase pxgrid
+fi
+if [[ "${ACTION}" == "resume" ]] || [[ ! -f "./certs/.pxgrid.enc" ]]; then
   run_in_container setup_pxgrid.py first-run
+  if [[ ! -s "./certs/.pxgrid.enc" ]]; then
+    echo "Error: pxGrid setup did not produce a credential store; setup remains incomplete." >&2
+    exit 1
+  fi
 fi
 
+if [[ "${INITIAL_SETUP}" == "1" ]]; then
+  record_setup_phase start
+fi
 echo ""
 echo "Starting ISE agent..."
 pull_image_once
 compose_cmd up -d
+if [[ "${INITIAL_SETUP}" == "1" ]]; then
+  rm -f "${SETUP_PENDING}"
+fi
 echo ""
-echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+echo "ISE agent container started. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"
+echo "Setup is verified only after the cloud connection, pxGrid activation, and a heartbeat appear."

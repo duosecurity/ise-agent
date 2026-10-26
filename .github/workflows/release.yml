@@ -20,6 +20,7 @@ jobs:
         run: |
           bash -n install.sh start.sh agentctl tests/test-host-tools.sh
           tests/test-host-tools.sh
+          python3 tests/test-setup-resume.py
 
   release:
     if: github.event_name == 'push'

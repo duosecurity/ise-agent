@@ -27,6 +27,43 @@ interval overrides to `.env`.
 
 Alternatively, download the agent package ZIP from the UI and run `./start.sh` manually.
 
+### Resume interrupted host setup
+
+For installations created with this host-tool release, a failed ISE credential,
+pxGrid configuration, or container-start step retains the saved cloud certificate,
+key, and completed configuration. Run this command in the same installation directory:
+
+```sh
+./start.sh --resume
+```
+
+Resume stops the service before running the image's ISE and pxGrid setup commands,
+then starts the service. Interactive setup asks for credentials again; existing
+encrypted stores retain the image's existing noninteractive behavior. A missing
+pxGrid store is configured even when the ISE store already exists. No automatic
+password retry loop is added, and no cloud enrollment is revoked.
+
+The private `.launcher/setup.pending` file records the interrupted host step.
+Ordinary start and update commands direct an incomplete installation to
+`--resume`; stop and log collection remain available. A lock prevents concurrent
+host setup sessions. After an abrupt process termination, confirm no setup is
+running before removing an abandoned `.launcher/setup.lock` directory.
+
+The host clears its pending marker when Compose accepts the start request.
+This does **not** establish cloud authorization or pxGrid readiness: verify the
+agent's cloud connection, pxGrid activation, and heartbeat before considering
+installation complete. Authentication happens in the existing agent image; this
+repository adds no certificate or cloud-authorization preflight interface.
+
+If the cloud deployment was deleted or its credentials reset, do not resume the
+old directory. Stop that deployment, obtain a fresh package, and install into a
+new dedicated directory. The installer refuses to overwrite saved identity and
+does not automatically redeem a replacement token over it. It also accepts
+`--resume` to delegate to an already installed launcher.
+
+This flow applies to the Docker/Podman host tools. It does not change the ISE
+appliance `application install` CLI, which belongs to `sbg-ise-agent-infra`.
+
 ## Releasing
 
 Every merge to `main` publishes a GitHub Release containing `install.sh`, the
@@ -59,6 +96,7 @@ customization, put it in `docker-compose.override.yml`; the generated base
 ```sh
 ./start.sh                # Start the agent (prompts for ISE credentials on first run)
 ./start.sh --reconfigure  # Re-enter ISE credentials
+./start.sh --resume       # Resume setup using the saved cloud enrollment
 ./start.sh --update       # Update host tools and the agent image, then restart
 ./start.sh --rollback     # Roll back to the retained previous application bundle
 ./start.sh --enable-auto-updates  # Enable signed application-bundle update checks
