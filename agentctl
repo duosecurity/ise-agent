@@ -357,9 +357,28 @@ compose_cmd() {
   "${COMPOSE_CMD[@]}" "$@"
 }
 
+container_is_running() {
+  local running
+  if ! running=$("${RUNTIME}" inspect --format '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null); then
+    return 1
+  fi
+  [[ "${running}" == "true" ]]
+}
+
+compose_start_and_verify() {
+  if ! compose_cmd up -d "$@"; then
+    return 1
+  fi
+  if ! container_is_running; then
+    echo "Error: ISE agent container ${CONTAINER_NAME} is not running after startup." >&2
+    echo "Inspect its state with: ${RUNTIME} ps -a --filter name=${CONTAINER_NAME}" >&2
+    return 1
+  fi
+}
+
 compose_restart() {
   compose_cmd down 2>/dev/null || true
-  if ! compose_cmd up -d; then
+  if ! compose_start_and_verify; then
     return 1
   fi
   echo "View logs: ${RUNTIME} logs -f ${CONTAINER_NAME}"
@@ -384,10 +403,10 @@ run_bundle_control() {
     --entrypoint /usr/local/bin/ise-agent-control \
     ise-agent "$@"; then
     echo "Error: could not ${description}; restarting the current ISE agent version." >&2
-    compose_cmd up -d ise-agent || true
+    compose_start_and_verify ise-agent || true
     return 1
   fi
-  if ! compose_cmd up -d ise-agent; then
+  if ! compose_start_and_verify ise-agent; then
     echo "Error: ${description} succeeded, but the ISE agent could not be restarted." >&2
     return 1
   fi
@@ -499,6 +518,6 @@ fi
 echo ""
 echo "Starting ISE agent..."
 pull_image_once
-compose_cmd up -d
+compose_start_and_verify
 echo ""
 echo "ISE agent is running. View logs with: ${RUNTIME} logs -f ${CONTAINER_NAME}"

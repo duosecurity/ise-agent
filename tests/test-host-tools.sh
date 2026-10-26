@@ -72,6 +72,10 @@ if [[ "${1:-}" == "info" ]]; then
   fi
   exit 0
 fi
+if [[ "${1:-}" == "inspect" ]] && [[ "$*" == *State.Running* ]]; then
+  echo "${ISE_AGENT_TEST_CONTAINER_RUNNING:-true}"
+  exit 0
+fi
 if [[ -n "${ISE_AGENT_TEST_FAIL_BOOTSTRAP:-}" ]] \
   && [[ "$*" == *'/app/bootstrap_iot.py --bundle --output-dir /bootstrap'* ]]; then
   exit 42
@@ -217,6 +221,20 @@ ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
 
 grep -q '/app/bootstrap_iot.py --packaged --output-dir /bootstrap' "${COMMAND_LOG}"
 grep -Eq 'run --rm --pull=never --user [0-9]+:[0-9]+ -v .*/bootstrap' "${COMMAND_LOG}"
+grep -q 'inspect --format {{.State.Running}} __CONTAINER_NAME__' "${COMMAND_LOG}"
+
+: > "${COMMAND_LOG}"
+NOT_RUNNING_OUTPUT="${TEST_ROOT}/not-running-output.log"
+if PATH="${BIN_DIR}:${PATH}" \
+  ISE_AGENT_TEST_COMMAND_LOG="${COMMAND_LOG}" \
+  ISE_AGENT_TEST_CONTAINER_RUNNING=false \
+    "${PACKAGE_DIR}/start.sh" --no-pull >"${NOT_RUNNING_OUTPUT}" 2>&1; then
+  echo "Expected startup to fail when the container is not running." >&2
+  exit 1
+fi
+grep -q 'is not running after startup' "${NOT_RUNNING_OUTPUT}"
+! grep -q 'ISE agent is running' "${NOT_RUNNING_OUTPUT}"
+grep -q 'inspect --format {{.State.Running}} __CONTAINER_NAME__' "${COMMAND_LOG}"
 
 : > "${COMMAND_LOG}"
 PATH="${BIN_DIR}:${PATH}" \
