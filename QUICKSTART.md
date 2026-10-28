@@ -26,6 +26,71 @@ the first connection. For complete setup and troubleshooting guidance, see the
 - Arrange for an ISE administrator to approve the agent's pxGrid client if you
   will create a new one.
 
+## Required platform processes
+
+This inventory applies to the supplied Docker or Podman deployment. The ISE
+agent installs no host background service, `systemd` or `launchd` unit, or
+scheduled task, and the supplied Compose configuration publishes no inbound
+port. Only the container runtime, ISE agent launcher, and ISE agent application
+are ISE-agent-owned continuous processes. Every other ISE-agent-owned process
+listed below is transient and may be stopped when its stated operation is
+complete. Platform DNS, time, networking, and runtime-helper dependencies are
+described separately below.
+
+| Administrator-visible process or command | Location and classification | Purpose | Effect if unavailable, restricted, or stopped |
+|---|---|---|---|
+| Docker Engine, Docker Desktop backend, or Podman container runtime | Customer host; essential and continuous | Runs the container, applies its restart policy, provides networking and persistent storage, and retains container logs | The agent stops collecting and sending data. A stopped runtime cannot restart the container after a host or process failure. |
+| ISE agent launcher | Inside the container; essential and continuous | Starts and supervises the active signed application bundle, checks for application updates, accepts healthy updates, and rolls back an update that does not become ready | The container exits. The container runtime's `restart: always` policy attempts to restart it. |
+| ISE agent application | Inside the container; essential and continuous under the launcher | Connects to Cisco Identity Intelligence and ISE, processes pxGrid events, performs scheduled collection, handles authorized commands, and publishes status and data | Collection, real-time session monitoring, commands, diagnostic uploads, and heartbeats stop. The launcher and runtime attempt recovery. |
+| Docker Compose, `podman compose`, or `podman-compose` | Customer host; transient operator command | Creates, starts, stops, and recreates the ISE agent service from `docker-compose.yml` | Install, start, stop, reconfiguration, host-tool update, and rollback commands cannot complete. An already running container normally continues until the container runtime or container stops. |
+| `start.sh` and `.launcher/agentctl` | Customer host; transient operator command | Validate prerequisites and coordinate bootstrap, configuration, image pulls, lifecycle operations, diagnostics, host-tool updates, and application rollback | The affected operator command fails. These scripts do not need to remain running after the command completes. |
+| `curl` | Customer host; transient download command | Downloads release metadata and host tools over HTTPS | Copied-command installation and host-tool refresh fail. Normal collection is unaffected after verified tools are installed. |
+| `sha256sum` or `shasum` | Customer host; transient verification command | Verifies downloaded host tools against the release checksum manifest | Installation or host-tool update fails closed. Normal collection is unaffected after verified tools are installed. |
+| IoT bootstrap utility | Short-lived setup container during installation or first start | Redeems one-time bootstrap material and writes the agent identity, certificate, and configuration | A new installation cannot obtain its identity or start. The process is not needed after bootstrap succeeds. |
+| ISE credential setup utility | Short-lived setup container during first start or reconfiguration | Validates ISE API and optional proxy access, then encrypts the ISE configuration | Initial configuration or reconfiguration fails. The running agent does not require this setup process. |
+| pxGrid setup utility | Short-lived setup container during first start or pxGrid reconfiguration | Encrypts the pxGrid node name and optional existing-client password. New-client registration is performed later by the ISE agent application. | pxGrid configuration cannot be created or changed. The running agent does not require this setup process. |
+| ISE agent update-control utility | Short-lived maintenance container while the service is stopped | Reports update-control capabilities, rolls back the active application bundle, or changes the signed-bundle update setting | Only the requested maintenance operation fails. It is not needed during normal collection. |
+| `collect-logs` image command | Short-lived diagnostic container | Runs the application's diagnostic collector and writes a bounded archive to the invoking host command | On-demand diagnostic collection fails. Continuous collection and reporting are unaffected. |
+
+### Process configuration and TCP/IP services
+
+All network connections initiated by these processes are outbound. The ISE
+agent does not provide an inbound TCP/IP service and the supplied Compose file
+has no `ports` mapping.
+
+| Process or command | Required or recommended configuration | TCP/IP services used; none are provided |
+|---|---|---|
+| Container runtime and Compose provider | Keep the runtime available while the agent is running. Use the supplied Compose settings, including `restart: always`, the `certs` mount, bounded `json-file` logging, and bridge networking unless host networking is required. Restrict runtime administration to authorized host administrators. Never mount or expose the runtime control socket inside the agent container. | The runtime pulls images from GHCR over outbound HTTPS/TCP 443. Its local or remote management interface is a customer platform service, not an ISE agent service. |
+| `start.sh`, `.launcher/agentctl`, and `curl` | Keep the host's trusted CA bundle current. Run only from the protected installation directory using the released scripts. | Outbound HTTPS/TCP 443 to GitHub release endpoints. Image pulls performed through the runtime use outbound HTTPS/TCP 443 to GHCR. |
+| `sha256sum` or `shasum` | One of these commands must be on `PATH`; do not bypass checksum verification. | No TCP/IP service. |
+| ISE agent launcher | Preserve the supplied update trust material and runtime files. Signed-bundle update checks are enabled by default and can be changed with the documented controller commands. | Outbound HTTPS/TCP 443 to GHCR and its registry authentication endpoint for signed application updates. No listening service. |
+| ISE agent application | Preserve `.env`, the mounted `certs` directory, and the generated endpoint and identity values. Configure `ISE_HTTPS_PROXY` only when an outbound proxy is required. | Outbound TLS to the configured ISE API port (TCP 443 by default); outbound TLS to applicable ISE pxGrid nodes on TCP 8910; outbound MQTT/TLS to `IOT_ENDPOINT` on `MQTT_PORT` (TCP 443 by default, or the explicitly configured port); and outbound HTTPS/TCP 443 to hosts in signed object-storage upload URLs. A configured proxy must accept HTTP CONNECT for these Internet destinations. No listening service. |
+| IoT bootstrap utility | Protect the one-time token, use only its generated HTTPS endpoint, and complete redemption before the token expires. | Outbound HTTPS/TCP 443 to the generated bootstrap endpoint. No listening service. |
+| ISE credential setup utility | Use the documented ISE roles, configured ISE port, and optional `http://` proxy URL. | Outbound TLS to the configured ISE API port, TCP 443 by default. When a proxy is configured, it also validates MQTT/TLS access to `IOT_ENDPOINT` through the proxy. No listening service. |
+| pxGrid setup and update-control utilities | Run only through `start.sh`; both modify protected state in the mounted `certs` directory. | No TCP/IP service. The setup utility stores configuration; the continuous application performs pxGrid registration and network access. |
+| `collect-logs` | Run only when diagnostics are required and protect the generated archive as sensitive operational data. | Outbound TLS to the configured ISE API port to collect permitted ISE diagnostics. No listening service. |
+
+### Other customer-platform processes
+
+| Platform service or common administrator-visible name | When it is needed and effect if disabled | Configuration and TCP/IP use |
+|---|---|---|
+| DNS resolver, such as the platform resolver, `systemd-resolved`, or `dnsmasq` | Required when any configured ISE, Cisco Identity Intelligence, GitHub, GHCR, proxy, or signed upload endpoint is a hostname. Disabling resolution prevents the corresponding connection. | Configure the container runtime and host with approved resolvers. DNS commonly uses outbound UDP or TCP 53; retain any different enterprise DNS transport required by the platform. |
+| Trusted clock synchronization, such as `chronyd`, `ntpd`, `systemd-timesyncd`, or a platform/hypervisor clock service | Accurate time is required for TLS certificate validation, secure update downloads, event timestamps, and scheduling. The agent does not require a particular implementation. | Use the organization's approved time sources. NTP implementations commonly use outbound UDP 123; a platform-provided clock may require no agent-host network service. |
+| DHCP client, commonly managed by NetworkManager, `systemd-networkd`, or `dhclient` | Required only when the customer host obtains its network configuration through DHCP. It is not a direct ISE agent dependency and may be disabled on a correctly configured static host. | Platform-dependent; DHCP commonly uses UDP 67 and 68. |
+| 802.1X supplicant, such as `wpa_supplicant` | Required only when the customer network requires host 802.1X authentication. It is not a direct ISE agent dependency. | Configure according to the customer network policy. EAP over LAN is a link-layer protocol rather than a TCP/IP service. |
+| Docker or Podman runtime helpers, such as `dockerd`, `containerd`, `containerd-shim`, `conmon`, and the configured OCI runtime | Required only as selected and started by the customer's container runtime. Disabling a required helper can stop or prevent restart of the agent container. | Retain, restrict, and patch the processes required by the runtime vendor's supported platform baseline. Their management and networking interfaces are platform services, not ISE agent services. |
+
+The ISE agent does not require a host database, HTTP server, RPC binder, D-Bus
+service, file server, syslog daemon, scheduler, or remote-management daemon. A
+knowledgeable administrator may disable them when they are also unnecessary
+for the host OS, container runtime, and customer's operational baseline.
+
+On OpenShift or Kubernetes, the continuous and short-lived container-process
+rows and network dependencies still apply. The cluster runtime, networking,
+DNS, logging, scheduler, and controller processes replace the host runtime and
+Compose rows; they are platform-owned and must be retained and secured
+according to the cluster vendor's supported baseline.
+
 ## Protect the deployment material
 
 The downloaded package and copied install command contain a sensitive,

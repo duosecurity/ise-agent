@@ -7,6 +7,12 @@ On-premises agent for [Cisco Identity Intelligence](https://www.cisco.com/c/en/u
 - Docker (with Compose) or Podman
 - Network access to your ISE ERS/MNT APIs
 
+The customer-facing [Quick Start](QUICKSTART.md#required-platform-processes)
+lists required and safely stoppable host and container processes, when each
+runs, its purpose, configuration requirements, TCP/IP use, and the effect of
+disabling or restricting it. The ISE agent does not install a host background
+service or scheduler.
+
 ## Installation
 
 The easiest way to install is via the one-line command provided in the Cisco Identity Intelligence UI after creating an ISE integration. The command looks like:
