@@ -70,7 +70,10 @@ chmod +x ./start.sh
 1. Enter the ISE hostname, username, password, and API port. The password is
    saved in the agent's encrypted credential store, not in `.env`.
 2. Enter an outbound HTTPS proxy only if required. Use an `http://host:port`
-   URL; the proxy must support HTTP CONNECT to port 443.
+   URL; the proxy must support HTTP CONNECT to port 443. If the proxy requires
+   authentication, use `http://user:password@host:port` and percent-encode
+   reserved or non-ASCII username and password characters. For example,
+   `p@ss:word` is written as `p%40ss%3Aword`.
 3. Choose how to configure pxGrid:
    - **Create a new pxGrid client:** accept `cii-agent` or enter a
      deployment-specific node name. After the agent starts, approve that client
@@ -79,6 +82,27 @@ chmod +x ./start.sh
      that is already registered and approved.
 
 pxGrid is required for real-time session events and complete session data.
+
+### Externally assigned outbound credentials
+
+Some outbound credentials are assigned by the authoritative peer rather than
+chosen manually. These are not fixed or null default credentials:
+
+- The one-time bootstrap token authorizes a single provisioning operation. The
+  bootstrap process generates the agent private key locally and sends only a
+  certificate signing request. Cisco Identity Intelligence returns a
+  certificate bound to that key and agent identity.
+- When you create a new pxGrid client, Cisco ISE generates its password. During
+  operation, the pxGrid protocol supplies a separate access secret for each
+  selected pxGrid service node. To choose the account credential instead, use
+  an existing pxGrid client and enter its node name and password during setup.
+- If the signed application-bundle registry requests authentication, the
+  registry issues a scoped bearer token for that download. The ISE agent does
+  not ship or reuse a registry password.
+
+ISE API, pxGrid, proxy, and IoT credentials are independent. One ISE agent is
+configured for one ISE deployment; deploy another agent when connecting a
+different ISE deployment with different credentials.
 
 ## Noninteractive setup
 
